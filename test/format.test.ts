@@ -1,41 +1,51 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatMb, formatUsage, toMb } from "../src/util/format";
+import { formatTokens, formatUsage } from "../src/util/format";
 
-test("Mb = 百万 token", () => {
-  assert.equal(toMb(1_000_000), 1);
-  assert.equal(toMb(1500), 0.0015);
+test("不到 1000 原样显示", () => {
+  assert.equal(formatTokens(0), "0");
+  assert.equal(formatTokens(7), "7");
+  assert.equal(formatTokens(847), "847");
+  assert.equal(formatTokens(999), "999");
 });
 
-test("小数值保留 4 位", () => {
-  assert.equal(formatMb(1234), "0.0012 Mb");
-  assert.equal(formatMb(1500), "0.0015 Mb");
-  assert.equal(formatMb(9999), "0.01 Mb".replace("0.01", "0.01")); // 0.009999 → 0.01
+test("1000 到 1M 用 K，取一位小数", () => {
+  assert.equal(formatTokens(1000), "1K");
+  assert.equal(formatTokens(1234), "1.2K");
+  assert.equal(formatTokens(12_345), "12.3K");
+  assert.equal(formatTokens(61_000), "61K");
 });
 
-test("中等值保留 3 位", () => {
-  assert.equal(formatMb(12_345), "0.012 Mb");
-  assert.equal(formatMb(123_456), "0.123 Mb");
+test("十万以上不再留小数，免得读不出量级", () => {
+  assert.equal(formatTokens(123_456), "123K");
+  assert.equal(formatTokens(999_000), "999K");
 });
 
-test("超过 1M 保留 2 位", () => {
-  assert.equal(formatMb(1_234_567), "1.23 Mb");
-  assert.equal(formatMb(12_000_000), "12 Mb");
+test("超过 1M 才换成 M", () => {
+  assert.equal(formatTokens(999_400), "999K");
+  assert.equal(formatTokens(999_949), "1M");
+  assert.equal(formatTokens(1_000_000), "1M");
+  assert.equal(formatTokens(1_234_567), "1.23M");
+  assert.equal(formatTokens(12_000_000), "12M");
 });
 
-test("0 与非法值都显示 0 Mb", () => {
-  assert.equal(formatMb(0), "0 Mb");
-  assert.equal(formatMb(-5), "0 Mb");
-  assert.equal(formatMb(Number.NaN), "0 Mb");
+test("贴近 1000K 时直接进 M，不显示 1000K", () => {
+  const s = formatTokens(999_980);
+  assert.ok(s.endsWith("M"), `应进 M，实际 ${s}`);
+});
+
+test("0 与非法值都显示 0", () => {
+  assert.equal(formatTokens(0), "0");
+  assert.equal(formatTokens(-5), "0");
+  assert.equal(formatTokens(Number.NaN), "0");
 });
 
 test("formatUsage 带输入输出拆分", () => {
-  assert.equal(formatUsage(11468, 1337), "0.013 Mb · 0.011↑ 0.0013↓");
-  assert.equal(formatUsage(0, 0), "0 Mb · 0↑ 0↓");
+  assert.equal(formatUsage(11468, 1337), "12.8K · 11.5K↑ 1.3K↓");
+  assert.equal(formatUsage(0, 0), "0 · 0↑ 0↓");
 });
 
-test("formatUsage 里 Mb 只出现一次，避免行太长", () => {
-  const s = formatUsage(5_000_000, 500_000);
-  assert.equal((s.match(/Mb/g) ?? []).length, 1);
+test("formatUsage 混量级时各自用各自的单位", () => {
+  assert.equal(formatUsage(1_200_000, 800), "1.2M · 1.2M↑ 800↓");
 });

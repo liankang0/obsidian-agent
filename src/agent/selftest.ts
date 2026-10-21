@@ -480,7 +480,7 @@ export async function runSelfTest(app: App, log: ToolContext["log"]): Promise<Se
       return "补桩 1 条 + 注入 1 条提醒";
     });
 
-    await check("面板：token 用量实时上报并格式化成 Mb", async () => {
+    await check("面板：token 用量实时上报并按量级选单位（K / M）", async () => {
       const seen: string[] = [];
       const loop = new AgentLoop({
         app,
@@ -498,8 +498,11 @@ export async function runSelfTest(app: App, log: ToolContext["log"]): Promise<Se
         if (e.type === "usage") seen.push(formatUsage(e.usage.promptTokens, e.usage.completionTokens));
       });
       assert(seen.length === 1, `应上报 1 次，实际 ${seen.length}`);
-      assert(seen[0].includes("Mb"), `格式里应有 Mb：${seen[0]}`);
-      assert(seen[0].startsWith("1.23 Mb"), `1_234_000 token 应显示 1.23 Mb，实际 ${seen[0]}`);
+      assert(!seen[0].includes("Mb"), `不该再用 Mb 当单位：${seen[0]}`);
+      assert(seen[0].startsWith("1.23M"), `1_234_000 token 应显示 1.23M，实际 ${seen[0]}`);
+      // 几万 token 的日常任务必须落在 K，而不是「0.0xx Mb」那种读不出量级的形式
+      const small = formatUsage(12_345, 1_234);
+      assert(small.startsWith("13.6K"), `1.3 万 token 应显示 13.6K，实际 ${small}`);
       await adapter.remove(`${PLUGIN_DIR}/state/${state.runId}.json`).catch(() => undefined);
       return seen[0];
     });
