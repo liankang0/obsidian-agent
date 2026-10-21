@@ -1,0 +1,358 @@
+/* Obsidian Agent —— 会话面板与 diff 弹窗样式 */
+
+.oa-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 8px;
+  padding: 8px;
+}
+
+.oa-chat__log {
+  flex: 1 1 auto;
+  /* 必须写 min-height:0：flex 子项默认 min-height:auto，不会缩到内容以下，
+     结果就是日志区把状态栏/输入框顶出可视范围、内容从它们底下透过去。
+     真机上表现为「最后一条消息被状态栏压住、点它也点不到」。 */
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oa-msg {
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.9em;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.oa-msg--user {
+  background: var(--background-modifier-hover);
+  align-self: flex-end;
+  max-width: 88%;
+}
+
+.oa-msg--assistant {
+  background: var(--background-secondary);
+}
+
+.oa-msg--tool {
+  background: transparent;
+  border-left: 2px solid var(--interactive-accent);
+  font-family: var(--font-monospace);
+  font-size: 0.78em;
+  color: var(--text-muted);
+}
+
+.oa-msg--error {
+  border-left: 2px solid var(--text-error);
+  color: var(--text-error);
+}
+
+.oa-status {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+/* 实时 token 消耗：右对齐小字，不跟状态文字抢行 */
+.oa-usage {
+  font-size: 0.72em;
+  color: var(--text-faint);
+  text-align: right;
+  padding: 0 0 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oa-input {
+  width: 100%;
+  min-height: 64px;
+  max-height: 140px;
+  resize: none;
+  font-size: 0.9em;
+}
+
+.oa-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* diff */
+
+.oa-diff {
+  font-family: var(--font-monospace);
+  font-size: 0.82em;
+  line-height: 1.5;
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 6px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.oa-diff__line {
+  padding: 0 8px;
+}
+
+.oa-diff__line--add {
+  background: rgba(0, 200, 80, 0.12);
+}
+
+.oa-diff__line--del {
+  background: rgba(230, 60, 60, 0.12);
+}
+
+.oa-diff__line--ctx {
+  color: var(--text-muted);
+}
+
+.oa-diff__head {
+  font-weight: 600;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+/* 顶部工具条：历史 / 新对话 */
+.oa-head {
+  display: flex;
+  gap: 6px;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.oa-head__btn {
+  font-size: 0.75em;
+  padding: 2px 10px;
+  height: auto;
+  line-height: 1.6;
+}
+
+/* 「继续执行」条：只在有未完成任务时出现 */
+.oa-resume:not(:empty) {
+  padding: 4px 0;
+}
+
+.oa-resume button {
+  width: 100%;
+  font-size: 0.8em;
+}
+
+/* 会话列表弹窗 */
+.oa-sessions__list {
+  max-height: 55vh;
+  overflow-y: auto;
+  margin: 8px 0;
+}
+
+.oa-sessions__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  margin-bottom: 6px;
+}
+
+.oa-sessions__main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.oa-sessions__title {
+  font-size: 0.92em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 挂着未完成任务的会话：左侧一个小圆点 */
+.oa-sessions__title--live::before {
+  content: "●";
+  color: var(--text-accent);
+  font-size: 0.7em;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.oa-sessions__meta {
+  font-size: 0.72em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.oa-sessions__del {
+  font-size: 0.72em;
+  padding: 2px 8px;
+  height: auto;
+}
+
+.oa-sessions__empty {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  padding: 16px 0;
+  text-align: center;
+}
+
+.oa-sessions__footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+/* 消息正文必须可选：Obsidian 移动端全局禁用了 user-select，
+   不显式打开的话长按选不中任何字 */
+.oa-msg__body,
+.oa-msg__body * {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.oa-msg {
+  position: relative;
+}
+
+/* 复制按钮：鼠标端悬停出现，触屏端常驻但克制 */
+.oa-msg__copy {
+  font-size: 0.68em;
+  padding: 0 6px;
+  height: auto;
+  line-height: 1.5;
+  margin-top: 3px;
+  opacity: 0.55;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.oa-msg:hover .oa-msg__copy {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .oa-msg__copy {
+    opacity: 0.8;
+  }
+}
+
+/* 等用户回话的选项卡片：手机上一按即答，不用打字 */
+.oa-ask {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+.oa-ask__q {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 0.95em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.oa-ask__icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+.oa-ask__opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 6px 24px;
+}
+.oa-ask__opt {
+  /* 手机上按钮要够大，手指才点得准 */
+  padding: 8px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  font-size: 0.9em;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+}
+.oa-ask__opt.is-picked {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.oa-ask__submit {
+  margin-left: 24px;
+}
+.oa-ask__submit[disabled] {
+  opacity: 0.45;
+}
+.oa-ask__hint {
+  margin: 6px 0 0 24px;
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+
+/* 本轮改动卡片：一个文件一行，动作标签 + 说明 + 路径 */
+.oa-changes {
+  margin: 6px 0 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.oa-changes__head {
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+}
+.oa-changes__body {
+  padding: 4px 0;
+}
+.oa-changes__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.oa-changes__op {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+  font-size: 11px;
+}
+.oa-changes__detail {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.oa-changes__path {
+  flex: 1 1 100%;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  word-break: break-all;
+}

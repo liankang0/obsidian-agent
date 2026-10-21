@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-agent",
+  "name": "Obsidian Agent",
+  "version": "0.0.1",
+  "minAppVersion": "1.13.0",
+  "description": "在 Obsidian 内运行的本地 AI Agent：工具调用、diff 审核、可续跑的会话。",
+  "author": "mi",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}

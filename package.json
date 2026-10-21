@@ -1,0 +1,21 @@
+{
+  "name": "obsidian-agent",
+  "version": "0.0.1",
+  "description": "在 Obsidian 内运行的本地 AI Agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit && node esbuild.config.mjs production",
+    "typecheck": "tsc -noEmit",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --format=esm --outdir=/tmp/oa-test --out-extension:.js=.mjs --log-level=error --alias:obsidian=./test/mocks/obsidian.ts && node --test /tmp/oa-test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.21.5",
+    "obsidian": "latest",
+    "tslib": "^2.6.2",
+    "typescript": "^5.4.5"
+  }
+}

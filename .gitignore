@@ -1,0 +1,9 @@
+# 依赖与产物：能重建的东西不进版本库
+node_modules/
+main.js
+*.log
+
+# 真机部署与调试的临时文件
+/selftest-report.json
+/selftest.flag
+/tmp/
