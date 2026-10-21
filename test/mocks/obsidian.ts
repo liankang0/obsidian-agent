@@ -91,6 +91,12 @@ export class FakeVault {
     this.entries.set(p, { type: "file", path: p, content, mtime: Date.now() });
   }
 
+  /** 测试用：改文件的修改时间（模拟老存档） */
+  touch(path: string, mtime: number): void {
+    const e = this.entries.get(normalizePath(path));
+    if (e) e.mtime = mtime;
+  }
+
   readRaw(path: string): string | undefined {
     const e = this.entries.get(normalizePath(path));
     return e?.type === "file" ? e.content : undefined;
@@ -240,6 +246,11 @@ export class MockAdapter {
 
   async list(path: string) {
     return this.vault.listDir(path);
+  }
+
+  async remove(path: string): Promise<void> {
+    if (!this.vault.statOf(path)) throw new Error(`ENOENT: ${path}`);
+    this.vault.deleteRaw(path);
   }
 
   async rmdir(path: string, recursive: boolean): Promise<void> {

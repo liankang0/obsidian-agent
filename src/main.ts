@@ -6,6 +6,7 @@ import { Provider } from "./agent/provider";
 import type { AgentConfig, HistoryTurn, LoopEvent, RunState } from "./agent/types";
 import { ChatView, VIEW_TYPE_AGENT_CHAT } from "./ui/ChatView";
 import { confirmChange } from "./ui/DiffModal";
+import { pruneStates } from "./agent/states";
 import { Logger } from "./util/log";
 import { ApprovalStore } from "./agent/approvals";
 import { runSelfTest, SELFTEST_FLAG, SELFTEST_REPORT } from "./agent/selftest";
@@ -74,6 +75,24 @@ export default class ObsidianAgentPlugin extends Plugin {
   }
 
   /**
+   * 存档清理：每跑一个任务写一个 state/*.json，之前从不清理。
+   * 真机上攒到 93 个 / 1.7 MB，而 listResumable() 每次打开面板要把整个目录读一遍，
+   * 文件越多面板越慢。没做完的活永远保留，只清"已经结束且够老"的。
+   */
+  private async pruneStates(): Promise<void> {
+    try {
+      const r = await pruneStates(this.app.vault.adapter, `${this.pluginDir}/state`);
+      if (r.removed > 0) {
+        this.logger.info(
+          `存档清理：删 ${r.removed} 个，留 ${r.kept} 个（其中未完成 ${r.resumable} 个）`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(`存档清理失败：${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /**
    * 设备自检入口。用「放标志文件 → 重载插件 → 读报告」的方式触发，
    * 不依赖 UI 点击、不依赖模型、不花 token。
    */
@@ -127,6 +146,8 @@ export default class ObsidianAgentPlugin extends Plugin {
 
     // 外溢文件只保留最近几天，顺手清理
     void this.pruneSpill();
+    // 存档同理：跑过的任务留个近期快照就够，没做完的永远留
+    void this.pruneStates();
 
     // 设备自检：插件目录里出现 selftest.flag 就跑一遍工具层剧本（见 selftest.ts）
     void this.maybeSelfTest();
