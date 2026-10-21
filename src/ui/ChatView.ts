@@ -253,14 +253,16 @@ export class ChatView extends ItemView {
   /**
    * 「本轮改动」卡片：手机上一段文字看不出动了什么，列成一行为一个文件。
    *
-   * 没做折叠。试过 div、button、pointerdown 三种做法，真机上这块区域的触摸事件都到不了
-   * （卡片在滚动区底部，被状态栏那一层压住），做出来就是个点不动的假按钮。
+   * 标题可点折叠。这一度点不动：根因是 .oa-chat__log 少了 min-height:0，
+   * 日志区不滚动而是把状态栏顶出可视范围，卡片落在状态栏底下，触摸进不去。
+   * 布局修好后点得着了。
    */
   appendChangesCard(ops: AppliedOp[]): void {
     const changes = groupChanges(ops);
     if (changes.length === 0) return;
     const box = this.logEl.createDiv({ cls: "oa-changes" });
-    const head = box.createDiv({
+    // 用 <button>：面板里能点的东西（发送、复制、选项）都是 button
+    const head = box.createEl("button", {
       cls: "oa-changes__head",
       text: `本轮改动 · ${changeSummary(changes)}`,
     });
@@ -273,6 +275,11 @@ export class ChatView extends ItemView {
       }
       row.createDiv({ cls: "oa-changes__path", text: c.path });
     }
+    head.addEventListener("click", () => {
+      const next = !body.hasClass("is-collapsed");
+      body.toggleClass("is-collapsed", next);
+      head.toggleClass("is-collapsed", next);
+    });
   }
 
   private appendQuestionCard(q: PendingQuestion): void {
@@ -484,8 +491,14 @@ export class ChatView extends ItemView {
     if (!card.textContent?.includes("2 个文件")) throw new Error(`标题没统计文件数：${card.textContent?.slice(0, 40)}`);
     if (!card.textContent?.includes("自检/甲.md")) throw new Error("卡片里没显示文件路径");
     if (!card.textContent?.includes("+2 −1 行")) throw new Error("卡片里没显示行数变化");
-    // 不做折叠：真机上这块区域被状态栏压住，点了也收不到事件（试过 div / button / pointerdown 都不行）
-    if (card.querySelector(".oa-changes__head") === null) throw new Error("卡片缺标题行");
+    // 点标题能折叠：布局修好（min-height:0）之前这里点不动，现在得真的验一遍
+    const cardHead = card.querySelector<HTMLElement>(".oa-changes__head");
+    const cardBody = card.querySelector(".oa-changes__body");
+    if (!cardHead || !cardBody) throw new Error("卡片缺标题行或内容区");
+    cardHead.click();
+    if (!cardBody.classList.contains("is-collapsed")) throw new Error("点标题没有折叠");
+    cardHead.click();
+    if (cardBody.classList.contains("is-collapsed")) throw new Error("再点一次没有展开");
 
     const addedCount = this.logEl.children.length - before;
     while (this.logEl.children.length > before) {

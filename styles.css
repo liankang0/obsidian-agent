@@ -320,10 +320,31 @@
   overflow: hidden;
 }
 .oa-changes__head {
+  display: block;
+  width: 100%;
+  margin: 0;
   padding: 7px 10px;
   font-size: 12px;
+  font-weight: normal;
+  text-align: left;
   color: var(--text-muted);
   background: var(--background-secondary);
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+/* 折叠后标题后面给个小记号，否则看不出这里能点 */
+.oa-changes__head::after {
+  content: " ▾";
+}
+
+.oa-changes__head.is-collapsed::after {
+  content: " ▸";
+}
+
+.oa-changes__body.is-collapsed {
+  display: none;
 }
 .oa-changes__body {
   padding: 4px 0;
