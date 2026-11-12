@@ -38,6 +38,12 @@ export interface ToolResult {
   ok: boolean;
   data?: unknown;
   error?: string;
+  /**
+   * 降级说明：工具只拿到了部分数据（检索超时、反链 API 不可用等），
+   * 结果可用但不完整。序列化时会渲染成「⚠ 本次数据不完整：…」让模型看见，
+   * 防止它把空结果当成「没有」而断言出错误结论。
+   */
+  degraded?: string;
 }
 
 export interface Usage {

@@ -268,7 +268,8 @@ export class MockApp {
     getLeavesOfType: () => unknown[];
   };
   metadataCache: {
-    getBacklinksForFile?: () => null;
+    /** 默认存在（对齐真实 Obsidian）；测试想模拟「API 缺失」时把它置回 undefined */
+    getBacklinksForFile?: (file: TFile) => { data: Record<string, number> } | null;
     getFileCache: (file: { path: string }) => unknown;
   };
   fileManager: {
@@ -292,6 +293,21 @@ export class MockApp {
         const tags: Array<{ tag: string }> = [...(fm.tagsArray ?? [])].map((tag) => ({ tag }));
         for (const m of raw.matchAll(/(?:^|\s)#([\w\u4e00-\u9fa5/-]+)/g)) tags.push({ tag: `#${m[1]}` });
         return { frontmatter: fm.data, tags };
+      },
+      // 真机上这是 Obsidian 维护的索引；mock 里现算：扫全库找指向它的 [[双链]]。
+      // [[旅行]] / [[knowledge/life/旅行]] / [[旅行|别名]] 都算链到。
+      getBacklinksForFile: (file: TFile) => {
+        const data: Record<string, number> = {};
+        const base = escapeRegExp(file.basename);
+        const withoutExt = escapeRegExp(file.path.replace(/\.md$/i, ""));
+        const re = new RegExp(`\\[\\[\\s*(${base}|${withoutExt})(\\|[^\\]]*)?\\]\\]`, "g");
+        for (const f of this.vault.getMarkdownFiles()) {
+          if (f.path === file.path) continue;
+          const raw = this.vault.rawContent(f.path) ?? "";
+          const n = [...raw.matchAll(re)].length;
+          if (n > 0) data[f.path] = n;
+        }
+        return { data };
       },
     };
     this.fileManager = {
@@ -324,6 +340,11 @@ export async function requestUrl(): Promise<never> {
   throw new Error("mock: requestUrl 不应被调用");
 }
 
+
+/** 正则转义（反链匹配用，中文文件名/路径可能含特殊字符） */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 /** 极简 frontmatter 解析（只为测试 metadataCache 用） */
 export function parseFrontmatter(raw: string): {

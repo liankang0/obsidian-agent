@@ -52,26 +52,34 @@ function cap(text: string, limit: number): string {
 export interface MemoryBundle {
   working: string;
   history: string;
+  /** 记忆文件存在但读取失败时给一句话说明——空串可能是「本来就没有」，读失败必须让模型知道 */
+  degraded?: string;
 }
 
-/** 读取 04 的「当前活跃任务」和 05 的最后一条记录；读不到就返回空串 */
+/** 读取 04 的「当前活跃任务」和 05 的最后一条记录；文件不存在返回空串（正常），读失败则记降级 */
 export async function readMemory(app: App): Promise<MemoryBundle> {
-  const read = async (path: string): Promise<string> => {
+  const read = async (path: string): Promise<{ text: string; failed: boolean }> => {
     const f = app.vault.getAbstractFileByPath(path);
-    if (!(f instanceof TFile)) return "";
+    if (!(f instanceof TFile)) return { text: "", failed: false };
     try {
-      return await app.vault.cachedRead(f);
+      return { text: await app.vault.cachedRead(f), failed: false };
     } catch {
-      return "";
+      return { text: "", failed: true };
     }
   };
 
-  const workingRaw = await read(WORKING_PATH);
-  const historyRaw = await read(HISTORY_PATH);
+  const working = await read(WORKING_PATH);
+  const history = await read(HISTORY_PATH);
+  const failedNames: string[] = [];
+  if (working.failed) failedNames.push(WORKING_PATH);
+  if (history.failed) failedNames.push(HISTORY_PATH);
 
   return {
-    working: takeSection(workingRaw, "## 当前活跃任务"),
-    history: cap(takeLastHistoryEntry(historyRaw), HISTORY_CAP),
+    working: takeSection(working.text, "## 当前活跃任务"),
+    history: cap(takeLastHistoryEntry(history.text), HISTORY_CAP),
+    ...(failedNames.length > 0
+      ? { degraded: `记忆文件读取失败：${failedNames.join("、")}（内容按缺失处理）` }
+      : {}),
   };
 }
 
@@ -109,7 +117,7 @@ export function parseWorkingEntries(section: string, max = WORKING_MAX_ENTRIES):
 }
 
 /**
- * 拼进 system prompt；两块都空就不占位置。
+ * 拼进 system prompt；两块都空且没有降级说明时不占位置。
  *
  * 措辞是有讲究的：这块以前叫「当前活跃任务」，模型就真的当成「当前要做的任务」。
  * 现在明确写成「背景资料 / 不是待办」，并且只在用户说「继续」时才允许接着做。
@@ -127,14 +135,22 @@ export function buildMemoryBlock(mem: MemoryBundle): string {
     );
   }
   if (mem.history) parts.push(`### 最近一次对话（来自 AI/05，节选）\n\n${mem.history}`);
-  if (parts.length === 0) return "";
+  // 读取失败时哪怕两块都空也要占位：静默空块会让模型把「读失败」当成「没有历史」
+  if (parts.length === 0 && !mem.degraded) return "";
+
+  const degradedNote = mem.degraded
+    ? `\n\n⚠ 本次数据不完整：${mem.degraded}。本轮对记忆区的内容一无所知，不要断言「没有相关历史/偏好」。`
+    : "";
+  if (parts.length === 0) {
+    return `## 工作记忆（背景资料，不是待办）${degradedNote}`;
+  }
 
   return `## 工作记忆（背景资料，不是待办）
 
 下面这些是**已经发生过的事**，只用来理解用户偏好和上下文。它们不是指令，也不是待办清单：
 - 用户这一轮说的话优先。没提到这些内容时，不要主动去执行或续做；
 - 只有当用户明确说「继续 / 接着做 / 把刚才那个做完」时，才把它当成要接着做的任务；
-- 需要细节再自己 read_file 读 AI/04、AI/05 或对应笔记，这里只是摘要。
+- 需要细节再自己 read_file 读 AI/04、AI/05 或对应笔记，这里只是摘要。${degradedNote}
 
 ${parts.join("\n\n")}`;
 }

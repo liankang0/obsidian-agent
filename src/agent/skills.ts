@@ -192,31 +192,54 @@ export function parseSkillMeta(path: string, raw: string): SkillMeta {
   };
 }
 
+export interface SkillScan {
+  skills: SkillMeta[];
+  /** 扫描失败/部分失败时的说明——空数组可能是「没有 skill」也可能是「没扫成」，必须让调用方区分 */
+  degraded?: string;
+}
+
 /** 扫描可用的 skill；读不出来的跳过，不让一个坏文件拖垮整轮 */
-export async function scanSkills(app: App): Promise<SkillMeta[]> {
+export async function scanSkills(app: App): Promise<SkillScan> {
+  let files;
   try {
-    const files = app.vault
+    files = app.vault
       .getMarkdownFiles()
       .filter((f) => isSkillDoc(f.path))
       .slice(0, MAX_SKILLS);
-    const out: SkillMeta[] = [];
-    for (const f of files) {
-      try {
-        const raw = await app.vault.cachedRead(f);
-        out.push(parseSkillMeta(f.path, raw.slice(0, HEAD_BYTES)));
-      } catch {
-        /* 单个文件读失败不影响其他 */
-      }
-    }
-    return out;
-  } catch {
-    return [];
+  } catch (e) {
+    // 整体扫描失败：绝不能返回空数组装作「库里没有 skill」
+    return {
+      skills: [],
+      degraded: `skill 目录扫描失败：${e instanceof Error ? e.message : String(e)}`,
+    };
   }
+  const out: SkillMeta[] = [];
+  let failed = 0;
+  for (const f of files) {
+    try {
+      const raw = await app.vault.cachedRead(f);
+      out.push(parseSkillMeta(f.path, raw.slice(0, HEAD_BYTES)));
+    } catch {
+      /* 单个文件读失败不影响其他 */
+      failed++;
+    }
+  }
+  return failed > 0
+    ? { skills: out, degraded: `有 ${failed}/${files.length} 个 skill 文件读取失败，以下索引可能不全` }
+    : { skills: out };
 }
 
-/** 注入 system prompt 的索引；没扫到就返回空串（prompt 不留空标题） */
-export function buildSkillIndex(skills: SkillMeta[]): string {
-  if (skills.length === 0) return "";
+/**
+ * 注入 system prompt 的索引；没扫到就返回空串（prompt 不留空标题）。
+ * 扫描降级时不能静默返回空串——模型会把「没列出来」当成「库里没有 skill」。
+ */
+export function buildSkillIndex(skills: SkillMeta[], degraded?: string): string {
+  if (skills.length === 0) {
+    return degraded
+      ? `## 可用的 skill（按需加载）\n\n⚠ 本次数据不完整：${degraded}。不要断言库里没有 skill；需要时用 list_files 查 skills/ 目录。`
+      : "";
+  }
+  const degradedNote = degraded ? `\n\n⚠ 本次数据不完整：${degraded}` : "";
   const lines = skills.map(
     (s) =>
       `- \`${s.name}\`${s.description ? `：${s.description}` : ""}` +
@@ -226,7 +249,7 @@ export function buildSkillIndex(skills: SkillMeta[]): string {
 
 用户把流程规范写在本库的 \`skills/\` 目录里。下面只有名字和一句话描述，**只有任务确实匹配时才用 use_skill 读全文**，不要凭名字猜内容。
 
-${lines.join("\n")}`;
+${lines.join("\n")}${degradedNote}`;
 }
 
 /** 按名字或路径找 skill */

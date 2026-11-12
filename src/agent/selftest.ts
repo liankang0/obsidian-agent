@@ -596,7 +596,7 @@ export async function runSelfTest(app: App, log: ToolContext["log"]): Promise<Se
     });
 
     await check("skill 加载器：真实 skills/ 目录能扫出索引", async () => {
-      const skills = await scanSkills(app);
+      const { skills } = await scanSkills(app);
       assert(skills.length > 0, "一个 skill 都没扫到");
       const index = buildSkillIndex(skills);
       assert(index.includes("use_skill"), "索引里没告诉模型怎么读全文");
@@ -625,13 +625,13 @@ export async function runSelfTest(app: App, log: ToolContext["log"]): Promise<Se
       assert(legacy.name === "面试复习", "旧布局的名字读不出来");
       assert((legacy.warnings ?? []).length >= 2, `旧布局应至少两条警告：${(legacy.warnings ?? []).join("；")}`);
       // 真实库里的 skill 全部列出警告（不改文件，只报告）
-      const real = await scanSkills(app);
+      const real = (await scanSkills(app)).skills;
       const dirty = real.filter((s) => (s.warnings ?? []).length > 0);
       return `规范 ${real.length - dirty.length} / 待整理 ${dirty.length}`;
     });
 
     await check("skill 加载器：use_skill 能读回真实正文", async () => {
-      const skills = await scanSkills(app);
+      const { skills } = await scanSkills(app);
       const r = await call(ctx(), "use_skill", { name: skills[0].name });
       assert(r.ok, `use_skill 失败：${r.error}`);
       const body = String(dataOf(r).body ?? "");

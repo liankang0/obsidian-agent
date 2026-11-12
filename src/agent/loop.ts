@@ -12,6 +12,7 @@ import {
   readChecklists,
   readMemory,
   WORKING_PATH,
+  type MemoryBundle,
 } from "./memory";
 import { repairToolPairing } from "./pairing";
 import { contextSize, pruneOldToolResults, shouldPrune, worthPruning } from "./prune";
@@ -72,6 +73,9 @@ ${memoryBlock ? `${memoryBlock}\n` : ""}${checklistBlock ? `${checklistBlock}\n`
     用户在手机上看消息，**打中文很贵**：能穷举的选择一定要放进 options（2-6 个，写成一句人话，比如「全做」「只改名」「先只改 3 个试试」），他点一下就等于回复你。选项会把这句话原样发回来。
 13. **工作记忆不是待办**。上面「工作记忆」块里是已经发生过的事。用户没说「继续 / 接着做」时，
     不要主动去做里面的任务；也不要因为记忆里提到某个话题，就把用户这一轮的简单指令升级成大工程。
+14. **「本次数据不完整」 ≠ 「没有」**。看到工具结果带「⚠ 本次数据不完整」标记（检索超时、反链 API 不可用、
+    记忆/skill 读取失败）时，结果只是部分数据：**不得**据此断言「没有」「全库只有 N 篇」「没人引用」「没有相关历史」。
+    要么向用户说明数据不完整，要么换工具重试（如用 list_files + read_files 补扫）。同理，count/backlinks 为 null 表示状态未知，不是 0。
 
 ${skillBlock ? `${skillBlock}\n\n` : ""}## 遇到工具报错时
 
@@ -114,12 +118,14 @@ export class AgentLoop {
   /** 仅用于日志，便于在真机上按 run 过滤 */
   private currentRunId: string | null = null;
   private running = false;
-  /** 本轮可用的 skill（start/resume 时扫描，工具按需读正文） */
+  /** 本轮可用的 skill（start/resume 时扫描，工具按需读正文）；扫描降级时说明存在 degraded */
   private skills: SkillMeta[] = [];
+  /** skill 扫描降级说明（API/文件读取失败），随索引一起进 prompt */
+  private skillsDegraded = "";
   /** 上一次记下的 skill 规范清单，用来去重 */
   private lastSkillWarning = "";
   /** 本轮注入 prompt 的工作记忆（04 活跃任务 + 05 最近一条） */
-  private memory: { working: string; history: string } = { working: "", history: "" };
+  private memory: MemoryBundle = { working: "", history: "" };
   /** Step 1/3 的检查清单（解析后压缩，不塞全文） */
   private checklists: Awaited<ReturnType<typeof readChecklists>> = { pre: [], post: [] };
 
@@ -163,7 +169,7 @@ export class AgentLoop {
       messages: [
         { role: "system", content: buildSystemPrompt(
             this.deps.app,
-            buildSkillIndex(this.skills),
+            buildSkillIndex(this.skills, this.skillsDegraded || undefined),
             buildMemoryBlock(this.memory),
             buildChecklistBlock(this.checklists),
           ) },
@@ -195,7 +201,9 @@ export class AgentLoop {
    */
   private async refreshContext(): Promise<void> {
     // 用户可能刚改过 skills/ 里的 md，每轮重新扫
-    this.skills = await scanSkills(this.deps.app);
+    const scan = await scanSkills(this.deps.app);
+    this.skills = scan.skills;
+    this.skillsDegraded = scan.degraded ?? "";
     const dirtySkills = this.skills.filter((s) => (s.warnings ?? []).length > 0);
     // 规范检查只记一次：用户改完 skill 之后能知道哪里不合 agentskills.io 的规矩
     if (dirtySkills.length > 0) {

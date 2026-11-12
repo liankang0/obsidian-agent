@@ -66,7 +66,7 @@ test("扫描只认 skills/ 和 AI/skills/，其他目录的 md 不算", async ()
     "knowledge/tech/x.md": "# 普通笔记\n\n不是 skill。",
     "AI/00-总指令.md": "# 总指令\n\n也不是 skill。",
   });
-  const skills = await scanSkills(app as never);
+  const { skills } = await scanSkills(app as never);
   const names = skills.map((s) => s.name);
   assert.ok(names.includes("框架核心"));
   assert.ok(names.includes("深层"));

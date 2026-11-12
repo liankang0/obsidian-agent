@@ -43,6 +43,8 @@ export interface ToolContext {
   markMemory?: () => void;
   /** 请求暂停等用户回话（ask_user 用）：状态切到 awaiting_confirm，本轮不再继续 */
   requestPause?: (q: PendingQuestion) => void;
+  /** 检索类工具的时间预算（毫秒），默认 8000；测试用它注入极小值制造超时降级 */
+  searchTimeBudgetMs?: number;
 }
 
 interface Entry {
@@ -51,6 +53,8 @@ interface Entry {
 }
 
 const ok = (data: unknown): ToolResult => ({ ok: true, data });
+/** 数据是「部分可用」时用：degraded 说明会渲染成「⚠ 本次数据不完整：…」让模型看见 */
+const okDegraded = (data: unknown, degraded: string): ToolResult => ({ ok: true, data, degraded });
 const err = (message: string): ToolResult => ({ ok: false, error: message });
 
 function str(args: Record<string, unknown>, key: string): string {
@@ -243,6 +247,7 @@ async function search(ctx: ToolContext, args: Record<string, unknown>): Promise<
   const query = str(args, "query");
   const useRegex = args.regex === true;
   const limit = Math.min(optNum(args, "limit") ?? 20, MAX_HITS);
+  const budget = ctx.searchTimeBudgetMs ?? 8000;
 
   let re: RegExp | null = null;
   if (useRegex) {
@@ -256,13 +261,19 @@ async function search(ctx: ToolContext, args: Record<string, unknown>): Promise<
   const needle = query.toLowerCase();
   const hits: Array<{ path: string; preview: string }> = [];
   const started = Date.now();
+  let timedOut = false;
 
   for (const file of ctx.app.vault.getMarkdownFiles()) {
     if (hits.length >= limit) break;
     // 敏感文件不参与检索：命中片段的 preview 本身就是内容泄露
     if (isSensitivePath(file.path) || isNoisePath(file.path)) continue;
-    // 单次检索的时间预算，防止大库卡死手机
-    if (Date.now() - started > 8000) break;
+    // 单次检索的时间预算，防止大库卡死手机。
+    // 超时必须让模型知道是「没搜完」而不是「没有」——静默 break 曾经让它
+    // 把部分结果当成全库结论。
+    if (Date.now() - started > budget) {
+      timedOut = true;
+      break;
+    }
 
     let text: string;
     try {
@@ -289,13 +300,16 @@ async function search(ctx: ToolContext, args: Record<string, unknown>): Promise<
     });
   }
 
-  return ok({
+  const result = {
     query,
     count: hits.length,
     truncated: hits.length >= limit,
     elapsedMs: Date.now() - started,
     hits,
-  });
+  };
+  return timedOut
+    ? okDegraded(result, `检索在 ${budget}ms 时间预算内没有扫完全库就中止了，count 只反映已扫描的部分；没有命中不代表全库没有`)
+    : ok(result);
 }
 
 async function getLinks(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
@@ -318,6 +332,13 @@ async function getBacklinks(ctx: ToolContext, args: Record<string, unknown>): Pr
   const mc = ctx.app.metadataCache as unknown as {
     getBacklinksForFile?: (f: TFile) => { data: Record<string, number> } | null;
   };
+  if (typeof mc.getBacklinksForFile !== "function") {
+    // 反链 API 缺失时绝不能返回空数组装作「没有引用」——那会诱导模型删除有引用的笔记
+    return okDegraded(
+      { path: file.path, count: null, backlinks: [] },
+      "反链 API 在此版本不可用，无法统计引用；count 为 null 不代表没有反链",
+    );
+  }
   const res = mc.getBacklinksForFile?.(file);
   const entries = res?.data ? Object.entries(res.data) : [];
 
@@ -898,16 +919,21 @@ async function readChecklist(ctx: ToolContext, args: Record<string, unknown>): P
 // 删除：走回收站，不硬删
 // ---------------------------------------------------------------------------
 
-/** 数一下有多少笔记链到它——准则 02 的「删除任务」要求先确认没有引用 */
-function countBacklinks(ctx: ToolContext, file: TFile): number {
+/**
+ * 数一下有多少笔记链到它——准则 02 的「删除任务」要求先确认没有引用。
+ * 返回 null 表示反链状态未知（API 缺失或抛错）——绝不能把「未知」当成「没有」，
+ * 否则确认框会写着「没有笔记链到它」然后删出一个断链。
+ */
+function countBacklinks(ctx: ToolContext, file: TFile): number | null {
   try {
     const mc = ctx.app.metadataCache as unknown as {
       getBacklinksForFile?: (f: TFile) => { data: Record<string, number> } | null;
     };
+    if (typeof mc.getBacklinksForFile !== "function") return null;
     const res = mc.getBacklinksForFile?.(file);
     return res?.data ? Object.keys(res.data).length : 0;
   } catch {
-    return 0;
+    return null;
   }
 }
 
@@ -922,12 +948,16 @@ async function trashNote(ctx: ToolContext, args: Record<string, unknown>): Promi
 
   const backlinks = countBacklinks(ctx, file);
   const size = (await ctx.app.vault.cachedRead(file)).length;
+  const backlinkNote =
+    backlinks === null
+      ? `⚠ 反链状态未知（API 不可用），无法确认是否被其他笔记引用`
+      : backlinks > 0
+        ? `⚠ 有 ${backlinks} 篇笔记链到它，删掉会变成断链`
+        : "，没有笔记链到它";
   const accepted = await ctx.confirm({
     tool: "trash_note",
     path,
-    summary:
-      `移入回收站：${path}（${size} 字符）` +
-      (backlinks > 0 ? `⚠ 有 ${backlinks} 篇笔记链到它，删掉会变成断链` : "，没有笔记链到它"),
+    summary: `移入回收站：${path}（${size} 字符）${backlinkNote}`,
     before: path,
     after: "回收站",
   });
@@ -937,12 +967,15 @@ async function trashNote(ctx: ToolContext, args: Record<string, unknown>): Promi
   // 不是 adapter.remove 那种物理删除，删错了还能捞回来。
   await ctx.app.fileManager.trashFile(file);
   ctx.changedFiles.add(path);
-  return ok({
+  const result = {
     trashed: true,
     path,
     backlinks,
     recover: "已移入回收站，可在 Obsidian 回收站或系统回收站恢复",
-  });
+  };
+  return backlinks === null
+    ? okDegraded(result, "删除前的反链检查没能执行（API 不可用），请留意可能产生断链")
+    : ok(result);
 }
 
 async function trashFolder(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
@@ -1115,11 +1148,20 @@ async function moveNote(ctx: ToolContext, args: Record<string, unknown>): Promis
 async function useSkill(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
   const key = str(args, "name").trim();
   if (!key) throw new PathError("name 不能为空");
-  const skills = ctx.skills ?? (await scanSkills(ctx.app));
+  let skills: SkillMeta[];
+  let scanDegraded: string | undefined;
+  if (ctx.skills) {
+    skills = ctx.skills;
+  } else {
+    const scanned = await scanSkills(ctx.app);
+    skills = scanned.skills;
+    scanDegraded = scanned.degraded;
+  }
   const meta = findSkill(skills, key);
   if (!meta) {
     return err(
-      `没有这个 skill：${key}。可用的有：${skills.map((s) => s.name).join("、") || "（无）"}`,
+      `没有这个 skill：${key}。可用的有：${skills.map((s) => s.name).join("、") || "（无）"}` +
+        (scanDegraded ? `\n⚠ 本次数据不完整：${scanDegraded}，不能据此断言库里没有这个 skill` : ""),
     );
   }
   const file = ctx.app.vault.getAbstractFileByPath(meta.path);

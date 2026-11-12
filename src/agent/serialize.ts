@@ -32,6 +32,15 @@ export interface Serialized {
  */
 const EXEMPT = new Set(["read_file", "read_files", "use_skill", "read_checklist"]);
 
+/** 工具结果自带 degraded 说明时取出来；没有/非法就当没有 */
+function degradedOf(result: unknown): string | undefined {
+  if (result && typeof result === "object" && "degraded" in result) {
+    const v = (result as { degraded?: unknown }).degraded;
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return undefined;
+}
+
 export async function serializeToolResult(
   deps: SerializeDeps,
   tool: string,
@@ -40,8 +49,11 @@ export async function serializeToolResult(
   result: unknown,
 ): Promise<Serialized> {
   const json = JSON.stringify(result);
+  // 「本次数据不完整」必须放在内容最前面：外溢/截断路径下模型可能只看头部，
+  // 埋在 JSON 里的字段它可能注意不到。正常结果不加前缀（完成定义里有断言）。
+  const marker = degradedOf(result) ? `⚠ 本次数据不完整：${degradedOf(result)}\n` : "";
   if (EXEMPT.has(tool) || json.length <= MAX_INLINE_CHARS) {
-    return { content: json, degraded: false };
+    return { content: `${marker}${json}`, degraded: false };
   }
 
   const path = spillFilePath(runId, tool, seq);
@@ -58,7 +70,7 @@ export async function serializeToolResult(
 
     const head = json.slice(0, SPILL_HEAD_CHARS);
     return {
-      content: spillNotice(json.length, path, head, json.split("\n").length),
+      content: `${marker}${spillNotice(json.length, path, head, json.split("\n").length)}`,
       spilledPath: path,
       degraded: false,
     };
@@ -67,7 +79,7 @@ export async function serializeToolResult(
     const msg = e instanceof Error ? e.message : String(e);
     deps.log.warn(`外溢失败，退回截断：${msg}`);
     return {
-      content: `${json.slice(0, MAX_INLINE_CHARS)}\n…（已截断，原始 ${json.length} 字符）`,
+      content: `${marker}${json.slice(0, MAX_INLINE_CHARS)}\n…（已截断，原始 ${json.length} 字符）`,
       degraded: true,
     };
   }
