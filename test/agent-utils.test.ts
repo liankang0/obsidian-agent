@@ -79,7 +79,7 @@ test("外溢说明里带字数、行数、落点与分段读取示例", () => {
 test("外溢路径判定：命中目录本身与子文件，不误伤同名前缀", () => {
   assert.equal(isSpillPath(`${SPILL_DIR}/run-1/01-search.txt`), true);
   assert.equal(isSpillPath(SPILL_DIR), true);
-  assert.equal(isSpillPath(`.obsidian/plugins/obsidian-agent/spillx/a.txt`), false);
+  assert.equal(isSpillPath(`.obsidian/plugins/local-vault-agent/spillx/a.txt`), false);
   assert.equal(isSpillPath("knowledge/tech/a.md"), false);
   // 反斜杠形式（模型偶尔会给）
   assert.equal(isSpillPath(`${SPILL_DIR}\\run-1\\a.txt`), true);

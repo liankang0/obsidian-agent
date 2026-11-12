@@ -49,7 +49,7 @@ export class Provider {
   async chat(messages: ChatMessage[], tools: ToolSpec[]): Promise<Completion> {
     const cfg = this.getConfig();
     if (!cfg.apiKey) {
-      throw new ApiError("未配置 API Key。请在 设置 → Obsidian Agent 中填写。");
+      throw new ApiError("未配置 API Key。请在 设置 → Local Vault Agent 中填写。");
     }
 
     const body: Record<string, unknown> = {
@@ -81,7 +81,7 @@ export class Provider {
     signal?: AbortSignal,
   ): Promise<Completion> {
     const cfg = this.getConfig();
-    if (!cfg.apiKey) throw new ApiError("未配置 API Key。请在 设置 → Obsidian Agent 中填写。");
+    if (!cfg.apiKey) throw new ApiError("未配置 API Key。请在 设置 → Local Vault Agent 中填写。");
 
     const run = (maxTokens: number): Promise<Completion> =>
       this.streamOnce(messages, tools, onDelta, signal, maxTokens);

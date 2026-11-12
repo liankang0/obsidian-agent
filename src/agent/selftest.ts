@@ -34,7 +34,7 @@ import { SPILL_DIR } from "./spill";
 import { executeTool, type ToolContext } from "./tools";
 import type { Completion, RunState, ToolCall, ToolResult } from "./types";
 
-/** 插件目录（.obsidian/plugins/obsidian-agent） */
+/** 插件目录（.obsidian/plugins/local-vault-agent） */
 const PLUGIN_DIR = SPILL_DIR.split("/").slice(0, 3).join("/");
 
 /**

@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-agent",
+  "name": "local-vault-agent",
   "version": "0.0.1",
   "description": "在 Obsidian 内运行的本地 AI Agent",
   "private": true,

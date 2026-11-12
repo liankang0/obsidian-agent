@@ -94,7 +94,7 @@ export class Logger {
       }
     } catch (e) {
       // 日志自身失败不能再抛，否则会盖掉真正的错误
-      console.warn("[obsidian-agent] 写日志失败", e);
+      console.warn("[local-vault-agent] 写日志失败", e);
     }
   }
 

@@ -2,14 +2,14 @@ import { App, TFile, normalizePath } from "obsidian";
 
 import { sensitiveReason } from "./sensitive";
 
-import { isSpillPath, SPILL_DIR } from "../agent/spill";
+import { isSpillPath } from "../agent/spill";
 
 /**
  * 大结果外溢目录：由插件自己写入，read_file 需要能读回来。
  * 注意 `.obsidian/` 不在 Obsidian 的 vault 索引里，这类路径必须走
  * `vault.adapter` 直接读，`getAbstractFileByPath` 一定返回 null。
+ * 目录本身运行时由 manifest.dir 派生，判断统一走 isSpillPath。
  */
-export const SPILL_ROOT = SPILL_DIR;
 
 export { isSpillPath };
 
@@ -64,7 +64,7 @@ export function toVaultPath(input: unknown): string {
   const normalized = normalizePath(p);
 
   // 外溢文件是插件自己写的大结果，必须允许读回，否则外溢没有意义
-  const isSpill = normalized === SPILL_ROOT || normalized.startsWith(SPILL_ROOT + "/");
+  const isSpill = isSpillPath(normalized);
 
   for (const dir of BLOCKED_DIRS) {
     if (isSpill) break;

@@ -14,7 +14,7 @@ import { TFile } from "obsidian";
 import type { RunState } from "./types";
 
 export const CHANGELOG_PATH = "AI/03-修改记录.md";
-const MARKER = "<!-- obsidian-agent:auto -->";
+const MARKER = "<!-- local-vault-agent:auto -->";
 
 /** 从第一条用户消息里取任务标题 */
 function taskTitle(state: RunState): string {
@@ -35,7 +35,7 @@ export function buildRecord(state: RunState, at: number): string {
   const lines = [
     "",
     `### ${stamp(at)} · ${taskTitle(state)}`,
-    `- **操作人**: Obsidian Agent（插件自动记录）`,
+    `- **操作人**: Local Vault Agent（插件自动记录）`,
     `- **操作时间**: ${stamp(at)}`,
     `- **操作内容**: ${state.step} 步完成，改动 ${files.length} 个文件（run ${state.runId}）`,
     `- **影响文件**: ${files.map((f) => `\`${f}\``).join("、")}`,
@@ -72,7 +72,7 @@ export async function appendRecord(
       await app.vault.process(existing, (data) => `${data.replace(/\s*$/, "")}\n${record}`);
       return true;
     }
-    await app.vault.create(CHANGELOG_PATH, `# AI 修改记录\n\n> 由 Obsidian Agent 自动追加。\n${record}`);
+    await app.vault.create(CHANGELOG_PATH, `# AI 修改记录\n\n> 由 Local Vault Agent 自动追加。\n${record}`);
     return true;
   } catch (e) {
     log?.warn(`写修改记录失败（不影响任务）：${e instanceof Error ? e.message : String(e)}`);

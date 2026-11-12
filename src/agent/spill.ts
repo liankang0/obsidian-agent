@@ -11,7 +11,26 @@
  * 关键取舍：**写盘失败时退回原来的硬切**，不能因为存储故障把内容弄丢。
  */
 
-export const SPILL_DIR = ".obsidian/plugins/obsidian-agent/spill";
+/**
+ * 外溢根目录。默认值只在测试与「未配置」时兜底；
+ * 生产环境由 main.ts 在 onload 时用 manifest.dir 校正（插件目录名不再写死在这里，
+ * 改插件 id 时这里不用动——上架计划 WP1 的要求）。
+ */
+const DEFAULT_SPILL_DIR = ".obsidian/plugins/local-vault-agent/spill";
+let spillRoot = DEFAULT_SPILL_DIR;
+
+/** 插件加载时调用：把外溢目录对准真实插件目录（如 .obsidian/plugins/<id>/spill） */
+export function configureSpillRoot(dir: string): void {
+  spillRoot = dir.replace(/\/+$/, "");
+}
+
+/** 当前外溢根目录（运行时值，测试可用 configureSpillRoot 覆写） */
+export function spillDir(): string {
+  return spillRoot;
+}
+
+/** 默认外溢目录常量：仅供既有测试引用，运行时请用 spillDir() */
+export const SPILL_DIR = DEFAULT_SPILL_DIR;
 
 /** 超过这个长度就外溢（字符） */
 export const MAX_INLINE_CHARS = 4000;
@@ -23,7 +42,7 @@ export const SPILL_HEAD_CHARS = 1200;
 export const SPILL_KEEP_DAYS = 7;
 
 /** 是否落在外溢目录下（纯字符串判断，便于单测） */
-export function isSpillPath(path: string, root = SPILL_DIR): boolean {
+export function isSpillPath(path: string, root: string = spillRoot): boolean {
   const p = path.replace(/\\/g, "/").replace(/^\/+/, "");
   return p === root || p.startsWith(root + "/");
 }
@@ -31,7 +50,7 @@ export function isSpillPath(path: string, root = SPILL_DIR): boolean {
 export function spillFilePath(runId: string, tool: string, seq: number): string {
   const safeRun = runId.replace(/[^\w-]/g, "_");
   const safeTool = tool.replace(/[^\w-]/g, "_");
-  return `${SPILL_DIR}/${safeRun}/${String(seq).padStart(2, "0")}-${safeTool}.txt`;
+  return `${spillRoot}/${safeRun}/${String(seq).padStart(2, "0")}-${safeTool}.txt`;
 }
 
 export function spillNotice(totalChars: number, filePath: string, head: string, totalLines: number): string {

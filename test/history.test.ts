@@ -4,7 +4,7 @@ import test from "node:test";
 import { ChatHistory } from "../src/agent/history";
 import { FakeVault, MockAdapter } from "./mocks/obsidian";
 
-const PATH = ".obsidian/plugins/obsidian-agent/chat-history.json";
+const PATH = ".obsidian/plugins/local-vault-agent/chat-history.json";
 
 function make() {
   const adapter = new MockAdapter(new FakeVault());
@@ -55,7 +55,7 @@ test("clear 之后磁盘也空了", async () => {
 
 test("坏文件不炸，按空历史处理", async () => {
   const adapter = bare();
-  await adapter.mkdir(".obsidian/plugins/obsidian-agent");
+  await adapter.mkdir(".obsidian/plugins/local-vault-agent");
   await adapter.write(PATH, "{ 这不是 json");
   const h = new ChatHistory(adapter as never, PATH);
   assert.deepEqual(await h.load(), []);
@@ -63,7 +63,7 @@ test("坏文件不炸，按空历史处理", async () => {
 
 test("非法条目被过滤掉", async () => {
   const adapter = bare();
-  await adapter.mkdir(".obsidian/plugins/obsidian-agent");
+  await adapter.mkdir(".obsidian/plugins/local-vault-agent");
   await adapter.write(
     PATH,
     JSON.stringify([

@@ -1,4 +1,4 @@
-# Obsidian Agent
+# Local Vault Agent
 
 在 Obsidian 内运行的本地 AI Agent（harness）。目标场景：**手机上用 Obsidian 时，让模型直接读写整个 Vault 干活**，而不是复制粘贴到聊天框里。
 
@@ -34,7 +34,7 @@
 ## 目录
 
 ```
-obsidian-agent/
+local-vault-agent/
 ├── README.md
 ├── manifest.json            # 插件清单（isDesktopOnly: false）
 ├── package.json
@@ -69,7 +69,7 @@ obsidian-agent/
 ## 快速开始（开发）
 
 ```bash
-cd ~/projects/obsidian-agent
+cd ~/projects/local-vault-agent
 npm install        # esbuild / typescript / obsidian 类型（已实测可装）
 npm run build      # tsc 类型检查 + 打包出 main.js
 npm test           # 单元测试（esbuild 打包到 /tmp 后用 node --test 跑）
@@ -82,11 +82,11 @@ npm test           # 单元测试（esbuild 打包到 /tmp 后用 node --test �
 ```
 
 它会构建并把 `main.js` / `manifest.json` / `styles.css` 推到
-`<vault>/.obsidian/plugins/obsidian-agent/`。
+`<vault>/.obsidian/plugins/local-vault-agent/`。
 
 开发期热更新用 `npm run dev`（watch 模式，持续产出 `main.js`）。
 
-在 Obsidian 里 `设置 → 第三方插件 → 重新载入`，启用 **Obsidian Agent**。
+在 Obsidian 里 `设置 → 第三方插件 → 重新载入`，启用 **Local Vault Agent**。
 
 手机端注意：`manifest.json` 必须是 `isDesktopOnly: false`，否则列表里直接看不到。
 
@@ -110,11 +110,11 @@ npm test           # 单元测试（esbuild 打包到 /tmp 后用 node --test �
 
 ```bash
 # 1. 放标志文件
-adb push /dev/null <vault>/.obsidian/plugins/obsidian-agent/selftest.flag
+adb push /dev/null <vault>/.obsidian/plugins/local-vault-agent/selftest.flag
 # 2. 重启 Obsidian（或重载插件），onload 检测到标志就跑
 adb shell am force-stop md.obsidian && adb shell am start -n md.obsidian/.MainActivity
 # 3. 取报告
-adb shell cat <vault>/.obsidian/plugins/obsidian-agent/selftest-report.json
+adb shell cat <vault>/.obsidian/plugins/local-vault-agent/selftest-report.json
 ```
 
 覆盖 40 项，分九层：

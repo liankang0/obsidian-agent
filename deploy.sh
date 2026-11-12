@@ -20,7 +20,7 @@ if [[ ! -d "${VAULT}" ]]; then
   exit 1
 fi
 
-PLUGIN_ID="obsidian-agent"
+PLUGIN_ID="local-vault-agent"
 DEST="${VAULT}/.obsidian/plugins/${PLUGIN_ID}"
 
 echo "==> 构建"

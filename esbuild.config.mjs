@@ -3,7 +3,7 @@ import process from "process";
 import { builtinModules } from "module";
 
 const banner = `/*
- * Obsidian Agent — 构建产物，请勿手动修改。
+ * Local Vault Agent — 构建产物，请勿手动修改。
  * 源码见 src/，构建命令：npm run build
  */
 `;
