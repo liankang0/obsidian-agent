@@ -239,6 +239,12 @@ export class MockAdapter {
     this.vault.writeRaw(path, data);
   }
 
+  /** 真 DataAdapter 有 append（Logger 落盘日志用），没有它第二次写日志就会静默失败 */
+  async append(path: string, data: string): Promise<void> {
+    const cur = this.vault.readRaw(path);
+    this.vault.writeRaw(path, (cur ?? "") + data);
+  }
+
   async mkdir(path: string): Promise<void> {
     const p = normalizePath(path);
     if (!this.vault.statOf(p)) this.vault.writeRaw(`${p}/.keep`, "");

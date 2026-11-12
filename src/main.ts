@@ -146,6 +146,8 @@ export default class ObsidianAgentPlugin extends Plugin {
     configureSpillRoot(`${this.pluginDir}/spill`);
 
     this.logger = new Logger(this.app.vault.adapter, this.pluginDir);
+    // WP4：日志目录会随库同步到云端，当前密钥必须字面打码（高熵串另有兜底层）
+    this.logger.setSecrets(() => (this.apiKey ? [this.apiKey] : []));
     this.chatHistory = new ChatHistory(this.app.vault.adapter, `${this.pluginDir}/chat-history.json`, this.logger);
     this.apiKey = await this.loadApiKey();
 
@@ -173,7 +175,9 @@ export default class ObsidianAgentPlugin extends Plugin {
         this.logger.info(`确认结果：${accepted ? "接受" : "拒绝"} ${req.path}`);
         return accepted;
       },
-      readOnly: this.settings.readOnly,
+      // WP4：隐私模式热读取——设置页切换后，同一次会话的下一次工具调用就生效，
+      // 不再要求重载插件
+      getReadOnly: () => this.settings.readOnly,
       approvals: this.approvals,
     });
 
@@ -550,12 +554,12 @@ class AgentSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("隐私模式")
-      .setDesc("开启后禁用所有写工具，只允许读取与检索")
+      .setDesc("开启后禁用所有写工具，只允许读取与检索。切换即时生效，无需重载")
       .addToggle((t) =>
         t.setValue(this.plugin.settings.readOnly).onChange(async (v) => {
           this.plugin.settings.readOnly = v;
           await this.plugin.saveSettings();
-          new Notice("隐私模式已" + (v ? "开启" : "关闭") + "，重新加载插件后生效");
+          new Notice("隐私模式已" + (v ? "开启" : "关闭") + "，下一次工具调用起生效");
         })
       );
 

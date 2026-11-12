@@ -22,8 +22,7 @@ import {
   type SelftestEnv,
 } from "../src/agent/selftest-scenarios";
 import { MockApp } from "./mocks/obsidian";
-
-const LOG = { info() {}, warn() {}, error() {} };
+import { Logger } from "../src/util/log";
 
 /** 真机上的对应物：AI/00-06 与 skills/ 都是用户真实文件；这里造等价夹具 */
 const FIXTURES: Record<string, string> = {
@@ -107,6 +106,13 @@ const FIXTURES: Record<string, string> = {
 const app = new MockApp(FIXTURES);
 const adapter = app.vault.adapter;
 
+/**
+ * 安全剧本要断言「落盘日志」，所以这里的 log 必须是会写文件的真 Logger，
+ * 与真机 runner（main.ts 传入的插件 Logger）一致——静默 logger 会让
+ * 「日志不含密钥 / 诊断不入日志」两个剧本永远验证不到。
+ */
+const fileLog = new Logger(adapter as never, PLUGIN_DIR);
+
 /** 剧本用的断言 helper（名字避开 node:assert 的 assert，剧本签名是 (cond, msg)） */
 const stepAssert = (cond: boolean, msg: string) => {
   if (!cond) throw new Error(msg);
@@ -115,11 +121,11 @@ const stepAssert = (cond: boolean, msg: string) => {
 const env: SelftestEnv = {
   app: app as never,
   adapter: adapter as never,
-  log: LOG,
+  log: fileLog,
   assert: stepAssert,
-  ctx: () => selftestCtx(app as never, LOG),
+  ctx: () => selftestCtx(app as never, fileLog),
   call: selftestCall,
-  makeLoop: (script) => selftestLoop(app as never, LOG, script),
+  makeLoop: (script) => selftestLoop(app as never, fileLog, script),
 };
 
 // 与真机 runner 完全相同的开场：清旧产物、建目录、写样例笔记
@@ -136,7 +142,7 @@ for (const step of SELFTEST_STEPS) {
 // 真机 runner 的编排层也要能跑通：同一个 app 上跑完整 runSelfTest（含清理与报告）
 test("自检编排：runSelfTest 全绿且产物清理干净", async () => {
   const { runSelfTest } = await import("../src/agent/selftest");
-  const report = await runSelfTest(app as never, LOG);
+  const report = await runSelfTest(app as never, fileLog);
   assert.equal(report.fail, 0, `失败的剧本：${report.steps.filter((s) => !s.ok).map((s) => `${s.name}：${s.detail}`).join("；")}`);
   assert.ok(report.steps.length >= SELFTEST_STEPS.length, "报告要覆盖全部剧本");
   // 编排层的清理：自检目录与外溢不留痕

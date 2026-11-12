@@ -13,16 +13,42 @@ export type LogLevel = "info" | "warn" | "error";
 const MAX_BUFFER = 300;
 const KEEP_DAYS = 7;
 
+/**
+ * 高熵判定（WP4 打码兜底层）：唯一字符够多且至少混了两种字符类。
+ * 随机密钥天然满足；单词、路径段、重复串达不到「唯一字符 ≥ 12」或只有一类。
+ */
+function isHighEntropy(token: string): boolean {
+  const unique = new Set(token).size;
+  if (unique < 12) return false;
+  let classes = 0;
+  if (/[a-z]/.test(token)) classes++;
+  if (/[A-Z]/.test(token)) classes++;
+  if (/\d/.test(token)) classes++;
+  if (/[+/_=-]/.test(token)) classes++;
+  return classes >= 2;
+}
+
 export class Logger {
   private buffer: string[] = [];
   private pending: string[] = [];
   private dirReady = false;
   private flushing = false;
+  /** 当前配置的密钥来源：打码的「字面替换」层数据（WP4） */
+  private getSecrets: () => string[] = () => [];
 
   constructor(
     private readonly adapter: DataAdapter,
     private readonly baseDir: string
   ) {}
+
+  /**
+   * 注入当前密钥（WP4）：日志目录在用户的库里、可能被同步到云端，
+   * 所以打码不能只靠猜格式——配置里的密钥不管长什么样，出现过就遮。
+   * 用 getter 是因为 key 可能在运行中被改（SecretStorage / 设置页）。
+   */
+  setSecrets(get: () => string[]): void {
+    this.getSecrets = get;
+  }
 
   private get logDir(): string {
     return `${this.baseDir}/logs`;
@@ -68,9 +94,21 @@ export class Logger {
     return this.buffer.slice(-n);
   }
 
-  /** 兜底打码：把形如 sk-xxxx 的串遮掉 */
+  /**
+   * 两层打码（WP4，取代原先「只猜 sk- 前缀」的正则）：
+   * ① 配置中的密钥字面替换——不管格式，出现过就遮（≥6 字符才认，防止误伤普通词）；
+   * ② 高熵串兜底——≥20 字符、字符集够杂（唯一字符 ≥12 且至少两类）的 token，
+   *    真正的密钥/令牌几乎都长这样；普通中文与文件路径达不到门槛，不受影响。
+   * ③ sk-/ak- 前缀的老规则保留：特别短的 key 逃过高熵判定时还有一道网。
+   */
   private mask(s: string): string {
-    return s.replace(/\b(sk|ak)-[A-Za-z0-9_\-]{6,}/g, (_m, p1) => `${p1}-***`);
+    let out = s;
+    for (const secret of this.getSecrets()) {
+      const v = secret.trim();
+      if (v.length >= 6 && out.includes(v)) out = out.split(v).join("***");
+    }
+    out = out.replace(/[A-Za-z0-9+/_=-]{20,}/g, (m) => (isHighEntropy(m) ? `${m.slice(0, 3)}***` : m));
+    return out.replace(/\b(sk|ak)-[A-Za-z0-9_\-]{6,}/g, (_m, p1) => `${p1}-***`);
   }
 
   /** 合并多次写入，避免频繁 IO */

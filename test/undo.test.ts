@@ -113,13 +113,16 @@ test("撤销：被外部改过的文件跳过并说明，其余文件正常还�
   );
 
   const report = await undoRun(app as never, state, LOG);
+  // 只断言「两条都跳过 + 各自的原因」；顺序不钉死——同毫秒内连续 patch 时
+  // lastAt 打平，按时间倒序的先后是不确定的（CI 上真发生过）
+  const skippedNote = new Map(report.skipped.map((s) => [s.path, s.note]));
   assert.deepEqual(
-    report.skipped.map((s) => s.path),
-    ["笔记/文3.md", "笔记/文1.md"],
+    report.skipped.map((s) => s.path).sort(),
+    ["笔记/文1.md", "笔记/文3.md"],
     `跳过的两个文件必须逐条出现：${JSON.stringify(report.skipped)}`,
   );
-  assert.ok(report.skipped[1].note.includes("被外部修改"), `文1 的原因要提外部修改：${report.skipped[1].note}`);
-  assert.ok(report.skipped[0].note.includes("多处"), `文3 的原因要提多处：${report.skipped[0].note}`);
+  assert.ok((skippedNote.get("笔记/文1.md") ?? "").includes("被外部修改"), `文1 的原因要提外部修改：${skippedNote.get("笔记/文1.md") ?? ""}`);
+  assert.ok((skippedNote.get("笔记/文3.md") ?? "").includes("多处"), `文3 的原因要提多处：${skippedNote.get("笔记/文3.md") ?? ""}`);
   assert.equal(report.reverted.length, 3);
   // 还原的 3 篇逐字节回去
   for (const i of [0, 2, 4]) assert.equal(app.vault.rawContent(`笔记/文${i}.md`), `正文 ${i}。`);

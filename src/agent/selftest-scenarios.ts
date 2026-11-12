@@ -104,6 +104,7 @@ export function selftestLoopFromChat(
   app: App,
   log: ToolContext["log"],
   chat: (messages: never[]) => Promise<Completion>,
+  opts: { getReadOnly?: () => boolean } = {},
 ): AgentLoop {
   return new AgentLoop({
     app,
@@ -112,7 +113,7 @@ export function selftestLoopFromChat(
     pluginDir: PLUGIN_DIR,
     log,
     confirm: async () => true,
-    readOnly: false,
+    getReadOnly: opts.getReadOnly ?? (() => false),
     approvals: new ApprovalStore(),
   });
 }
@@ -128,6 +129,14 @@ export async function prepareScratch(app: App, adapter: DataAdapter): Promise<vo
   await adapter.rmdir(`${SPILL_DIR}/selftest`, true).catch(() => undefined);
   await app.vault.createFolder(SCRATCH_DIR);
   await adapter.write(NOTE_PATH, NOTE);
+}
+
+/** 读今天的落盘日志（安全自检用：断言密钥/笔记原文不进日志） */
+async function readTodayLog(env: { adapter: DataAdapter }): Promise<string> {
+  const d = new Date();
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const path = `${PLUGIN_DIR}/logs/agent-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}.log`;
+  return (await env.adapter.read(path).catch(() => "")) as string;
 }
 
 /** 剧本运行环境：runner 负责组装，剧本只申请 */
@@ -917,6 +926,93 @@ export const SELFTEST_STEPS: SelftestStep[] = [
         "还原过的操作要标记 undone，防止重复撤销",
       );
       return "patch → 撤销 → 逐字节还原";
+    },
+  },
+  {
+    name: "安全：日志不含密钥（字面打码 + 高熵兜底）",
+    run: async (env) => {
+      // WP4 完成定义第一条。真实密钥由 Logger.setSecrets 做字面替换（单测钉住）；
+      // 设备上用密钥样式的假串验证写盘路径上兜底层真的生效。
+      const secret = "sk-selftest-9f2c8d7e1a4b6e3d";
+      env.log.warn(`自检注入：Authorization: Bearer ${secret}`);
+      await new Promise((r) => setTimeout(r, 700)); // Logger 微批 300ms + 余量
+      const raw = await readTodayLog(env);
+      env.assert(raw.length > 0, "日志文件没写出来");
+      env.assert(!raw.includes(secret), "日志里出现了密钥样串——打码失效");
+      env.assert(raw.includes("sk-***"), "日志里没有打码痕迹");
+      return "密钥样串在落盘日志里已遮蔽";
+    },
+  },
+  {
+    name: "安全：patch 诊断只回模型，笔记原文不入日志",
+    run: async (env) => {
+      // WP4 完成定义第二条。诊断里的原文摘录是给模型修正用的，日志目录会同步到云端。
+      const p = `${SCRATCH_DIR}/diag.md`;
+      const marker = "自检标记行-诊断不得入日志-f3a9c2";
+      await env.adapter.write(p, `# 诊断自检\n\n${marker}\n`);
+      const ctx = env.ctx();
+      const r = await env.call(ctx, "patch_file", { path: p, old: "这句话不在文件里", new: "x" });
+      env.assert(r.ok === false, "故意失败的 patch 应该失败");
+      const diag = String(r.error ?? "");
+      env.assert(diag.includes(marker), "诊断里必须有笔记原文（模型要靠它修正）");
+      await new Promise((r2) => setTimeout(r2, 700));
+      const raw = await readTodayLog(env);
+      env.assert(!raw.includes(marker), "笔记原文被写进了日志——诊断必须只回给模型");
+      env.assert(raw.includes("工具 patch_file 失败"), "日志里要有失败摘要行（可排查）");
+      return "模型可见、日志无痕";
+    },
+  },
+  {
+    name: "安全：隐私模式开关即时生效（同一次会话内）",
+    run: async (env) => {
+      // WP4 完成定义第三条。同一个 loop（= 同一次会话）里拨开关，不重载、不重建。
+      const p = `${SCRATCH_DIR}/privacy.md`;
+      await env.adapter.write(p, "原文。\n");
+      let readOnly = false;
+      let calls = 0;
+      const loop = selftestLoopFromChat(
+        env.app,
+        env.log,
+        async () => {
+          calls++;
+          if (calls === 1) {
+            return {
+              content: "",
+              toolCalls: [{ id: "pv1", name: "patch_file", args: { path: p, old: "原文。", new: "改后。" } }],
+            };
+          }
+          if (calls === 3) {
+            return {
+              content: "",
+              toolCalls: [{ id: "pv2", name: "patch_file", args: { path: p, old: "改后。", new: "再改。" } }],
+            };
+          }
+          return { content: "收尾。", toolCalls: [] };
+        },
+        { getReadOnly: () => readOnly },
+      );
+
+      const s1 = await loop.start("自检：隐私模式关着时改一笔", () => undefined);
+      env.assert(s1.status === "done", `第一轮应完成：${s1.status} ${s1.error ?? ""}`);
+      env.assert((await env.adapter.read(p)).includes("改后。"), "隐私模式关闭时写没生效");
+
+      // 不重载、不重建 loop，同一会话内把开关拨到开——下一次工具调用就必须被拒
+      readOnly = true;
+      const s2 = await loop.start("自检：隐私模式开着时再改一笔", () => undefined);
+      env.assert(s2.status === "done", `第二轮应结束：${s2.status} ${s2.error ?? ""}`);
+      const toolMsg = s2.messages.find((m) => m.role === "tool");
+      env.assert(
+        String(toolMsg?.content ?? "").includes("只读"),
+        `写工具没被隐私模式拒绝：${String(toolMsg?.content ?? "").slice(0, 80)}`,
+      );
+      env.assert(s2.appliedOps.length === 0, "被拒绝的操作不能进 appliedOps");
+      env.assert(
+        (await env.adapter.read(p)).includes("改后。") && !(await env.adapter.read(p)).includes("再改。"),
+        "文件不该被改动",
+      );
+      await env.adapter.remove(`${PLUGIN_DIR}/state/${s1.runId}.json`).catch(() => undefined);
+      await env.adapter.remove(`${PLUGIN_DIR}/state/${s2.runId}.json`).catch(() => undefined);
+      return "开关一拨，同会话下一个写调用即被拒";
     },
   },
 ];

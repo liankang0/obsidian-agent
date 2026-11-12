@@ -117,7 +117,6 @@ test("继续执行时清掉旧的待答问题（否则面板会再弹一次卡�
       maxTokens: 100,
       maxSteps: 20,
       confirmAfterFiles: 5,
-      readOnly: false,
     }),
     pluginDir: "/tmp",
     log: { info() {}, warn() {}, error() {} },

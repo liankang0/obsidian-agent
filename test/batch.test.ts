@@ -57,7 +57,9 @@ test("批量读：单篇超限就截断，并标出来", async () => {
   );
   const data = r.data as { files: Array<{ content: string; truncated?: boolean }> };
   assert.equal(data.files[0].truncated, true);
-  assert.equal(data.files[0].content.length, 200);
+  // WP4 起正文包在 vault_file_data 里，数正文里的「长」字数而不是总长度
+  const payload = data.files[0].content.split("长").length - 1;
+  assert.equal(payload, 200);
 });
 
 test("批量读：超过 20 个直接拒绝（防止一次塞爆上下文）", async () => {
