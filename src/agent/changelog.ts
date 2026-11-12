@@ -16,6 +16,40 @@ import type { RunState } from "./types";
 export const CHANGELOG_PATH = "AI/03-修改记录.md";
 const MARKER = "<!-- local-vault-agent:auto -->";
 
+/**
+ * 主文件超过这么多字符就把旧内容整段归档到年度文件。
+ * 03 只追加不清理的话会一直长：真机上一年就能写到几百 KB，
+ * 每次追加都是全文件读改写，手机上越来越慢。
+ */
+export const ARCHIVE_THRESHOLD_CHARS = 40_000;
+
+/** 归档文件按年分：AI/03-修改记录-2026.md */
+function archivePath(): string {
+  return `AI/03-修改记录-${new Date().getFullYear()}.md`;
+}
+
+/** 把旧内容挪到年度文件（存在就追加）。失败不打扰主流程。 */
+async function archiveChangelog(
+  app: App,
+  content: string,
+  log?: { warn(msg: string): void },
+): Promise<boolean> {
+  const path = archivePath();
+  try {
+    const body = content.trim();
+    const existing = app.vault.getAbstractFileByPath(path);
+    if (existing instanceof TFile) {
+      await app.vault.process(existing, (old) => `${old.replace(/\s*$/, "")}\n\n${body}\n`);
+    } else {
+      await app.vault.create(path, `${body}\n`);
+    }
+    return true;
+  } catch (e) {
+    log?.warn(`归档修改记录失败（不影响记录本身）：${e instanceof Error ? e.message : String(e)}`);
+    return false;
+  }
+}
+
 /** 从第一条用户消息里取任务标题 */
 function taskTitle(state: RunState): string {
   const first = state.messages.find((m) => m.role === "user" && typeof m.content === "string");
@@ -69,6 +103,18 @@ export async function appendRecord(
       // 幂等：同一个 run 不重复记录（恢复后重跑会再走一遍收尾）
       const current = await app.vault.read(existing);
       if (current.includes(`run ${state.runId}`)) return false;
+      // 超阈值先归档：主文件回到骨架，旧内容整体进年度文件
+      if (current.length > ARCHIVE_THRESHOLD_CHARS) {
+        const archived = await archiveChangelog(app, current, log);
+        if (archived) {
+          await app.vault.process(
+            existing,
+            () => `# AI 修改记录\n\n> 由 Local Vault Agent 自动追加。\n${record}`,
+          );
+          return true;
+        }
+        // 归档失败就照旧追加，宁可文件大也不能丢记录
+      }
       await app.vault.process(existing, (data) => `${data.replace(/\s*$/, "")}\n${record}`);
       return true;
     }

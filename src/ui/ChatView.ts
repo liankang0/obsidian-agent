@@ -165,12 +165,20 @@ export class ChatView extends ItemView {
     this.appendMessage("user", text);
     this.setBusy(true);
 
+    // 发送即落盘：以前这行在 runAgent 之后，任务中途被杀（手机上很常见）
+    // 这轮话就从历史里消失了，恢复任务后上下文对不上。
+    // 历史写失败不挡任务：内存里仍有 this.history 兜底这一轮的上下文。
     try {
-      const answer = await this.plugin.runAgent(text, (e) => this.handleEvent(e), this.history);
-      // 把这一轮存进历史：用户说的 + 模型最后那段回答（由循环返回，不信 DOM）
-      // 落盘 + 内存各存一份：磁盘管「重启后还在」，内存管「这一轮传给模型」
       await this.plugin.chatHistory.append({ role: "user", content: text, at: Date.now() });
       this.history.push({ role: "user", content: text });
+    } catch {
+      /* 忽略，任务继续 */
+    }
+
+    try {
+      const answer = await this.plugin.runAgent(text, (e) => this.handleEvent(e), this.history);
+      // 把这一轮存进历史：模型最后那段回答（由循环返回，不信 DOM）
+      // 落盘 + 内存各存一份：磁盘管「重启后还在」，内存管「这一轮传给模型」
       if (answer) {
         await this.plugin.chatHistory.append({ role: "assistant", content: answer, at: Date.now() });
         this.history.push({ role: "assistant", content: answer });

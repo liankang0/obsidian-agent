@@ -95,6 +95,11 @@ export interface RunState {
   /** 已经因「空回复」重试过几次（防止模型静默掉线被当成完成） */
   emptyReplies?: number;
   /**
+   * 本次 run 已修改过的文件（changedFiles 的持久化形态）。
+   * 不存的话续跑后计数归零，confirmAfterFiles 的安全阀在新一轮里形同虚设。
+   */
+  changedFiles?: string[];
+  /**
    * 本轮用户那句话在 messages 里的下标。
    * 有了它，取「模型最后说了什么」时就不会从注入的历史里捞答案——
    * 曾经因为扫全表，把上上轮的回答当成这轮的回答又存一遍，历史里出现三份一样的。

@@ -88,6 +88,28 @@ function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
+/** .canvas / .base 是 JSON 格式：写入坏 JSON 会损坏整个文件且 Obsidian 打不开 */
+const STRUCTURED_EXTS = new Set(["canvas", "base"]);
+
+/**
+ * 结构化文件（画板/数据库）写入前校验。返回错误说明，合法返回 undefined。
+ * patch_file 传「打完补丁后的全文」，create/write 传将要写入的正文。
+ */
+function structuredFileError(path: string, resultingContent: string): string | undefined {
+  const dot = path.lastIndexOf(".");
+  const ext = dot >= 0 ? path.slice(dot + 1).toLowerCase() : "";
+  if (!STRUCTURED_EXTS.has(ext)) return undefined;
+  try {
+    JSON.parse(resultingContent);
+    return undefined;
+  } catch (e) {
+    return (
+      `画板类文件（.${ext}）必须是合法 JSON，本次写入会产生坏 JSON 而损坏它：` +
+      `${e instanceof Error ? e.message : String(e)}。请先 read_file 看原文，保持 JSON 结构完整。`
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 工具实现
 // ---------------------------------------------------------------------------
@@ -259,7 +281,7 @@ async function search(ctx: ToolContext, args: Record<string, unknown>): Promise<
   }
 
   const needle = query.toLowerCase();
-  const hits: Array<{ path: string; preview: string }> = [];
+  const hits: Array<{ path: string; line: number; preview: string }> = [];
   const started = Date.now();
   let timedOut = false;
 
@@ -293,6 +315,8 @@ async function search(ctx: ToolContext, args: Record<string, unknown>): Promise<
 
     hits.push({
       path: file.path,
+      // 行号从 1 开始：没有行号时模型 patch 前还得先 read_file 整篇定位，白烧一步
+      line: text.slice(0, idx).split("\n").length,
       preview: text
         .slice(Math.max(0, idx - 60), idx + 140)
         .replace(/\s+/g, " ")
@@ -376,6 +400,9 @@ async function enforceGuard(
 }
 
 async function patchFile(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
+  // 只读前置检查必须最先做：不能因为路径不存在/参数不对就先抛别的错，
+  // 那会让「为什么被拒」变成猜谜。与 create/write/move/trash 对齐。
+  if (ctx.readOnly) return err("当前处于只读/隐私模式，禁止修改笔记。");
   const file = getTFile(ctx.app, args.path);
   assertWritable(file.path);
 
@@ -397,6 +424,10 @@ async function patchFile(ctx: ToolContext, args: Record<string, unknown>): Promi
     throw new PathError(`目标文本在 ${file.path} 中出现多处。\n\n${explainAmbiguous(current, match.ranges)}`);
   }
   const range = match.ranges[0];
+  // 画板类文件：校验打完补丁后的全文仍是合法 JSON，不合法就拒绝（在确认弹窗之前拦）
+  const patched = current.slice(0, range.start) + newText + current.slice(range.end);
+  const invalid = structuredFileError(file.path, patched);
+  if (invalid) return err(invalid);
   await enforceGuard(ctx, file.path, "patch_file", oldText, newText);
 
   // 确认策略：该目录已被批准过就直接放行，否则累计改满 N 个文件后逐次确认
@@ -443,6 +474,8 @@ async function createNote(ctx: ToolContext, args: Record<string, unknown>): Prom
   const overwrite = args.overwrite === true;
 
   if (ctx.readOnly) return err("当前处于只读/隐私模式，禁止创建笔记。");
+  const invalidCreate = structuredFileError(path, content);
+  if (invalidCreate) return err(invalidCreate);
   await enforceGuard(ctx, path, "create_note", "", content.slice(0, 4000));
 
   const existing = ctx.app.vault.getAbstractFileByPath(path);
@@ -476,11 +509,14 @@ async function createNote(ctx: ToolContext, args: Record<string, unknown>): Prom
 }
 
 async function writeFile(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
+  // 只读检查最先做：不能因为路径不存在就报「找不到笔记」，让「为什么被拒」变成猜谜
+  if (ctx.readOnly) return err("当前处于只读/隐私模式，禁止写文件。");
   const file = getTFile(ctx.app, args.path);
   assertWritable(file.path);
-  if (ctx.readOnly) return err("当前处于只读/隐私模式，禁止写文件。");
 
   const content = typeof args.content === "string" ? args.content : "";
+  const invalidWrite = structuredFileError(file.path, content);
+  if (invalidWrite) return err(invalidWrite);
   const before = await ctx.app.vault.cachedRead(file);
   await enforceGuard(ctx, file.path, "write_file", before.slice(0, 4000), content.slice(0, 4000));
 
@@ -1112,7 +1148,7 @@ async function moveNote(ctx: ToolContext, args: Record<string, unknown>): Promis
 
   const file = ctx.app.vault.getAbstractFileByPath(from);
   if (!file) throw new PathError(`找不到笔记：${from}。先用 search 或 list_files 确认路径。`);
-  if (!(file instanceof TFile)) throw err(`目标是文件夹：${from}`);
+  if (!(file instanceof TFile)) return err(`目标是文件夹：${from}。移动文件夹请用其他方式。`);
   if (ctx.app.vault.getAbstractFileByPath(to)) {
     return err(`目标已存在：${to}。换一个位置，或先处理同名文件。`);
   }

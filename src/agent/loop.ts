@@ -184,6 +184,10 @@ export class AgentLoop {
     // messages 的最后一条就是用户这句；本轮回答只在这里之后找
     state.turnStart = state.messages.length - 1;
 
+    // 发送即落盘：以前第一次存档要等到第一个工具调用前，任务在最开始的
+    // 模型调用期间被杀，checkpoint 里连「用户要什么」都没有，续跑无从谈起。
+    await this.saveState(state).catch(() => undefined);
+
     try {
       await this.drive(state, onEvent);
     } finally {
@@ -244,6 +248,9 @@ export class AgentLoop {
     // 用户已经答过了，旧问题不能留在 checkpoint 里，否则面板会再弹一次
     state.pendingQuestion = undefined;
     state.error = undefined;
+    // 本轮起点重置到当前消息末尾：不重置的话 finalAnswer 会把暂停前的
+    // 旧回答又取一遍，用户看到「任务失败」却附着一整段上轮的回复
+    state.turnStart = state.messages.length - 1;
     try {
       await this.drive(state, onEvent);
     } finally {
@@ -395,6 +402,8 @@ export class AgentLoop {
             result = { ok: false, error: e instanceof Error ? e.message : String(e) };
           }
         }
+        // changedFiles 同步进存档：续跑时安全阀的计数从这里恢复，不跟着清零
+        state.changedFiles = [...ctx.changedFiles];
         const ms = Date.now() - startedAt;
 
         state.messages.push({
@@ -584,7 +593,8 @@ export class AgentLoop {
       app: this.deps.app,
       log: this.deps.log,
       confirm: this.deps.confirm,
-      changedFiles: new Set<string>(),
+      // 续跑时从存档恢复：不恢复的话计数归零，改满 N 个才确认的安全阀重新从 0 数起
+      changedFiles: new Set(state.changedFiles ?? []),
       confirmAfterFiles: this.deps.getConfig().confirmAfterFiles,
       readOnly: this.deps.readOnly ?? false,
       runId: state.runId,
