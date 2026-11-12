@@ -1,5 +1,6 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
-import type { PendingQuestion, ToolCall, ToolResult, ToolSpec } from "./types";
+import type { PendingQuestion, ToolCall, ToolResult, ToolSpec, UndoInfo } from "./types";
+import { UNDO_TEXT_CAP } from "./undo";
 import { PathError, assertWritable, assertReadableSize, getTFile, globToRegExp, isSpillPath, toVaultPath } from "../util/path";
 import { isSensitivePath } from "../util/sensitive";
 import { explainAmbiguous, explainMismatch, findMatches, tierHint } from "../util/fuzzy";
@@ -44,6 +45,11 @@ export interface ToolContext {
   requestPause?: (q: PendingQuestion) => void;
   /** 检索类工具的时间预算（毫秒），默认 8000；测试用它注入极小值制造超时降级 */
   searchTimeBudgetMs?: number;
+  /**
+   * 写工具成功时带出的撤销数据（改前/改后文本，WP3）。
+   * loop 在 executeTool 之后读走并挂到 appliedOps 上；超 UNDO_TEXT_CAP 的操作不设置它。
+   */
+  pendingUndo?: UndoInfo;
 }
 
 interface Entry {
@@ -457,6 +463,11 @@ async function patchFile(ctx: ToolContext, args: Record<string, unknown>): Promi
   }
 
   ctx.changedFiles.add(file.path);
+  // WP3：改前/改后文本本来就在手里，顺手留给「撤销本轮」。
+  // 超上限不设（见 undo.ts 头注释）——宁可不可撤销，也不能拿截断文本还原。
+  if (oldText.length <= UNDO_TEXT_CAP && newText.length <= UNDO_TEXT_CAP) {
+    ctx.pendingUndo = { kind: "patch", old: oldText, new: newText };
+  }
   return ok({
     path: file.path,
     matchedWith: match.tier,
@@ -490,8 +501,13 @@ async function createNote(ctx: ToolContext, args: Record<string, unknown>): Prom
     });
     if (!accepted) return err(`用户拒绝对 ${path} 的覆盖。`);
     ctx.approvals.allow(path);
+    // 覆盖前留一份原文：撤销本轮时能逐字节还原（write 类）
+    const before = await ctx.app.vault.cachedRead(existing);
     await ctx.app.vault.modify(existing, content);
     ctx.changedFiles.add(path);
+    if (before.length <= UNDO_TEXT_CAP && content.length <= UNDO_TEXT_CAP) {
+      ctx.pendingUndo = { kind: "write", before, after: content };
+    }
     return ok({ path, created: false, overwritten: true });
   }
 
@@ -502,6 +518,10 @@ async function createNote(ctx: ToolContext, args: Record<string, unknown>): Prom
 
   await ctx.app.vault.create(path, content);
   ctx.changedFiles.add(path);
+  // 新建的撤销 = 内容一致时移入回收站（undo.ts）；同样受留存上限约束
+  if (content.length <= UNDO_TEXT_CAP) {
+    ctx.pendingUndo = { kind: "create", after: content };
+  }
   return ok({ path, created: true, chars: content.length });
 }
 
@@ -529,6 +549,10 @@ async function writeFile(ctx: ToolContext, args: Record<string, unknown>): Promi
 
   await ctx.app.vault.modify(file, content);
   ctx.changedFiles.add(file.path);
+  // WP3：整篇覆盖的改前/改后都完整在手里，留存给「撤销本轮」
+  if (before.length <= UNDO_TEXT_CAP && content.length <= UNDO_TEXT_CAP) {
+    ctx.pendingUndo = { kind: "write", before, after: content };
+  }
   return ok({ path: file.path, chars: content.length });
 }
 

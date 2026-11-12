@@ -13,6 +13,7 @@ import { runSelfTest, SELFTEST_FLAG, SELFTEST_REPORT } from "./agent/selftest";
 
 
 import { configureSpillRoot, spillDir, SPILL_KEEP_DAYS } from "./agent/spill";
+import { undoRun, type UndoReport } from "./agent/undo";
 
 const SECRET_ID = "local-vault-agent-api-key";
 
@@ -269,6 +270,18 @@ export default class ObsidianAgentPlugin extends Plugin {
   /** 面板用：有哪些任务还能继续 */
   listResumable(): Promise<RunState[]> {
     return this.loop.listResumable();
+  }
+
+  /**
+   * 面板「撤销本轮」（WP3）：按修改记录逆向回放该 run 的内容级改动。
+   * undoRun 会摘掉已还原操作的撤销数据；这里随后落盘存档，
+   * 保证重启之后再次点击也不会把同一批操作撤第二遍。
+   */
+  async undoLastRun(state: RunState): Promise<UndoReport> {
+    if (this.loop?.isRunning) throw new Error("有任务正在运行，请先中止再撤销");
+    const report = await undoRun(this.app, state, this.logger);
+    await this.loop.saveState(state).catch(() => undefined);
+    return report;
   }
 
   /**

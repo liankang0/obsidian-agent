@@ -84,8 +84,8 @@ export function buildRecord(state: RunState, at: number): string {
  * 用 vault.process 做读改写，避免和同步客户端抢写入。
  * 失败只记日志，绝不影响任务本身。
  */
-/** 自检产生的改动不该进用户的修改记录 */
-function isSelftestOnly(paths: string[]): boolean {
+/** 自检产生的改动不该进用户的修改记录（撤销记账用同一把尺子） */
+export function isSelftestOnly(paths: string[]): boolean {
   return paths.length > 0 && paths.every((p) => p.startsWith("_agent-selftest/") || p.startsWith(".obsidian/"));
 }
 

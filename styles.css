@@ -377,3 +377,29 @@
   font-size: 11px;
   word-break: break-all;
 }
+
+/* 「撤销本轮」：低调的次要按钮，误触代价高所以字号不大、不抢眼 */
+.oa-changes__undo {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 6px 10px 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: none;
+  cursor: pointer;
+}
+.oa-changes__undo:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* 待确认态：第二下才是真撤，把风险说在按钮上 */
+.oa-changes__undo.is-armed {
+  color: var(--text-error, #c0392b);
+  border-color: var(--text-error, #c0392b);
+}
+

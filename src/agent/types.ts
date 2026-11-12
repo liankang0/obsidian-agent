@@ -69,6 +69,18 @@ export type RunStatus = "running" | "awaiting_confirm" | "done" | "failed" | "ab
 
 export const AWAITING_HINT = "已暂停，等你回话";
 
+/**
+ * 撤销信息（内容级还原）。只覆盖「精确替换工具在成功时本来手里就有」的改前/改后文本；
+ * 移动、删除不走这条路径——元数据级还原仍由回收站负责（WP3 的明确取舍）。
+ */
+export type UndoInfo =
+  /** patch_file：old 必须在当前内容中出现且仅出现一次才允许回放 */
+  | { kind: "patch"; old: string; new: string }
+  /** write_file / create_note 覆盖：当前内容必须与 after 逐字节一致才允许还原 */
+  | { kind: "write"; before: string; after: string }
+  /** create_note 新建：当前内容必须与 after 一致，撤销 = 移入回收站 */
+  | { kind: "create"; after: string };
+
 export interface AppliedOp {
   tool: string;
   path?: string;
@@ -77,6 +89,13 @@ export interface AppliedOp {
   op?: string;
   /** 一句话说明：+3 −1 / a.md → b.md / 移入回收站 */
   detail?: string;
+  /**
+   * 可撤销的改前/改后数据（超 UNDO_TEXT_CAP 的操作不带此字段，即不可撤销——
+   * 宁可少，也不能拿截断过的文本去「还原」出半坏不坏的文件）。
+   */
+  undo?: UndoInfo;
+  /** 已被「撤销本轮」还原过的操作：面板/回放都不再把它当作未撤销的改动 */
+  undone?: boolean;
 }
 
 /** 落盘到 state/<runId>.json 的运行状态 */

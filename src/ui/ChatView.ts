@@ -2,7 +2,7 @@ import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import { formatUsage } from "../util/format";
 import { SessionModal } from "./SessionModal";
 import { changeSummary, groupChanges } from "../agent/changes";
-import type { AppliedOp, HistoryTurn, LoopEvent, PendingQuestion } from "../agent/types";
+import type { HistoryTurn, LoopEvent, PendingQuestion, RunState } from "../agent/types";
 import type ObsidianAgentPlugin from "../main";
 
 export const VIEW_TYPE_AGENT_CHAT = "local-vault-agent-chat";
@@ -58,6 +58,10 @@ export class ChatView extends ItemView {
   private askEl: HTMLElement | null = null;
   /** 当前会话关联的未完成 runId（有值才显示「继续执行」） */
   private resumableRunId: string | null = null;
+  /** 最近一次跑完的 run 状态：撤销按钮的工作对象（WP3） */
+  private lastRunState: RunState | null = null;
+  /** 面板里当前唯一的「撤销本轮」按钮：新卡片出现时把旧卡片的撤掉 */
+  private undoBtn: HTMLButtonElement | null = null;
   private inputEl!: HTMLTextAreaElement;
   private sendBtn!: HTMLButtonElement;
   /**
@@ -233,7 +237,8 @@ export class ChatView extends ItemView {
         // 用独立样式：这行是运行汇总，不是模型说的话。
         // 之前和 assistant 共用样式，导致它被当成「上一轮的回答」混进对话历史。
         this.appendSummary(`— 运行结束，共 ${e.state.step} 步，修改 ${uniqueFiles(e.state)} 个文件`);
-        this.appendChangesCard(e.state.appliedOps);
+        this.lastRunState = e.state;
+        this.appendChangesCard(e.state);
         this.setUsage(e.state.usage.promptTokens, e.state.usage.completionTokens);
         break;
       case "error":
@@ -265,7 +270,8 @@ export class ChatView extends ItemView {
    * 日志区不滚动而是把状态栏顶出可视范围，卡片落在状态栏底下，触摸进不去。
    * 布局修好后点得着了。
    */
-  appendChangesCard(ops: AppliedOp[]): void {
+  appendChangesCard(state: RunState): void {
+    const ops = state.appliedOps;
     const changes = groupChanges(ops);
     if (changes.length === 0) return;
     const box = this.logEl.createDiv({ cls: "oa-changes" });
@@ -283,11 +289,70 @@ export class ChatView extends ItemView {
       }
       row.createDiv({ cls: "oa-changes__path", text: c.path });
     }
+
+    // 「撤销本轮」（WP3）：只要本轮有带撤销数据的操作就给入口。
+    // 撤销数据是逆序回放的依据，没有它的操作（移动/删除/超大文本）由 undoRun 逐条解释。
+    const undoable = [...new Set(ops.filter((o) => o.undo).map((o) => o.path).filter(Boolean))] as string[];
+    if (undoable.length > 0) {
+      this.undoBtn?.remove();
+      const btn = body.createEl("button", {
+        cls: "oa-changes__undo",
+        text: `撤销本轮（还原 ${undoable.length} 个文件）`,
+      });
+      this.undoBtn = btn;
+      // 两段式确认：手机上误触一下就整批还原太危险，第二下才是真撤。
+      let armed = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      btn.addEventListener("click", () => {
+        if (!armed) {
+          armed = true;
+          btn.addClass("is-armed");
+          btn.setText("再点一次确认撤销（外部改过的文件会跳过并说明）");
+          timer = setTimeout(() => {
+            armed = false;
+            btn.removeClass("is-armed");
+            btn.setText(`撤销本轮（还原 ${undoable.length} 个文件）`);
+          }, 6000);
+          return;
+        }
+        if (timer !== null) clearTimeout(timer);
+        void this.runUndo(state, btn, undoable.length);
+      });
+    }
+
     head.addEventListener("click", () => {
       const next = !body.hasClass("is-collapsed");
       body.toggleClass("is-collapsed", next);
       head.toggleClass("is-collapsed", next);
     });
+  }
+
+  /** 真正执行撤销。全量成功后按钮熄灭；有跳过的保留入口，处理完外部冲突可重试。 */
+  private async runUndo(state: RunState, btn: HTMLButtonElement, total: number): Promise<void> {
+    if (this.plugin.isRunning()) {
+      this.setStatus("有任务正在运行，请先中止再撤销。");
+      return;
+    }
+    btn.disabled = true;
+    btn.setText("撤销中…");
+    try {
+      const report = await this.plugin.undoLastRun(state);
+      for (const p of report.reverted) this.appendSummary(`— 已还原 ${p}`);
+      for (const s of report.skipped) this.appendMessage("error", `⚠ 未撤销 ${s.path}：${s.note}`);
+      if (report.skipped.length === 0) {
+        btn.setText(`已撤销（还原 ${report.reverted.length}/${total}）`);
+        this.setStatus(`已撤销本轮：还原 ${report.reverted.length} 个文件`);
+      } else {
+        btn.disabled = false;
+        btn.setText(`重试跳过的 ${report.skipped.length} 个文件`);
+        this.setStatus(`撤销完成：还原 ${report.reverted.length}，跳过 ${report.skipped.length}`);
+      }
+    } catch (e) {
+      btn.disabled = false;
+      btn.setText(`撤销本轮（还原 ${total} 个文件）`);
+      this.appendMessage("error", `撤销失败：${e instanceof Error ? e.message : String(e)}`);
+    }
+    this.scrollToBottom();
   }
 
   private appendQuestionCard(q: PendingQuestion): void {
@@ -508,6 +573,42 @@ export class ChatView extends ItemView {
     cardHead.click();
     if (cardBody.classList.contains("is-collapsed")) throw new Error("再点一次没有展开");
 
+    // 「撤销本轮」入口（WP3）：有可撤销操作才出现；两段式确认，
+    // 自检只验到「待确认」这一步——第二下才真撤，不能在自检里动用户的文件
+    this.handleEvent({
+      type: "done",
+      state: {
+        runId: "selftest",
+        createdAt: 0,
+        updatedAt: 0,
+        status: "done",
+        step: 2,
+        maxSteps: 20,
+        messages: [],
+        appliedOps: [
+          {
+            tool: "patch_file",
+            path: "自检/丙.md",
+            at: 1,
+            op: "改",
+            detail: "+1 −0 行",
+            undo: { kind: "patch", old: "a", new: "b" },
+          },
+        ],
+        usage: { promptTokens: 1, completionTokens: 1 },
+      },
+    });
+    const undoCard = Array.from(this.logEl.children)
+      .slice(before)
+      .find((el) => el.classList.contains("oa-changes"));
+    if (!undoCard) throw new Error("撤销测试卡片没渲染出来");
+    const undoBtn = undoCard.querySelector<HTMLButtonElement>(".oa-changes__undo");
+    if (!undoBtn) throw new Error("有可撤销操作时没有「撤销本轮」按钮");
+    if (!undoBtn.textContent?.includes("撤销本轮")) throw new Error(`撤销按钮文案不对：${undoBtn.textContent}`);
+    undoBtn.click();
+    if (!undoBtn.textContent?.includes("再点一次")) throw new Error("点一下没有进入待确认态");
+    if (undoBtn.disabled) throw new Error("待确认态不该把按钮禁用");
+
     const addedCount = this.logEl.children.length - before;
     while (this.logEl.children.length > before) {
       this.logEl.lastElementChild?.remove();
@@ -536,6 +637,9 @@ export class ChatView extends ItemView {
     this.history = [];
     this.setUsage(0, 0);
     this.hideResume();
+    // 换了会话，旧 run 的撤销入口必须跟着失效（按钮引用也清掉）
+    this.lastRunState = null;
+    this.undoBtn = null;
 
     if (!id) {
       await this.plugin.chatHistory.createSession();
@@ -598,6 +702,8 @@ export class ChatView extends ItemView {
     this.history = [];
     this.logEl.empty();
     this.hideResume();
+    this.lastRunState = null;
+    this.undoBtn = null;
     await this.plugin.chatHistory.clear();
     this.setStatus("对话已清空");
   }

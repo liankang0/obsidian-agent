@@ -29,6 +29,7 @@ import {
 import { checkProtected } from "./guard";
 import { pruneOldToolResults, shouldPrune, worthPruning, contextSize } from "./prune";
 import { buildRecord, CHANGELOG_PATH } from "./changelog";
+import { undoRun } from "./undo";
 import { buildSkillIndex, parseSkillMeta, isSkillManifest, scanSkills } from "./skills";
 import { SPILL_DIR } from "./spill";
 import { serializeToolResult } from "./serialize";
@@ -886,6 +887,36 @@ export const SELFTEST_STEPS: SelftestStep[] = [
       env.assert(String(state.error ?? "").includes("3 次"), `错误信息不对：${state.error}`);
       await env.adapter.remove(`${PLUGIN_DIR}/state/${state.runId}.json`).catch(() => undefined);
       return `熔断生效：${state.error}`;
+    },
+  },
+  {
+    name: "撤销本轮：patch 逆向回放逐字节还原（WP3）",
+    run: async (env) => {
+      const p = `${SCRATCH_DIR}/undo.md`;
+      const original = "# 撤销自检\n\n原始正文。\n";
+      await env.adapter.write(p, original);
+      const loop = env.makeLoop([
+        {
+          content: "",
+          toolCalls: [{ id: "u1", name: "patch_file", args: { path: p, old: "原始正文。", new: "改后正文。" } }],
+        },
+        { content: "改好了。", toolCalls: [] },
+      ]);
+      const state = await loop.start("自检：改一处然后撤销", () => undefined);
+      env.assert(state.status === "done", `状态是 ${state.status}：${state.error ?? ""}`);
+      const op = state.appliedOps.find((o) => o.path === p);
+      env.assert(op?.undo?.kind === "patch", "成功的 patch 必须带 patch 撤销数据（采集端断了）");
+
+      const report = await undoRun(env.app, state, env.log);
+      env.assert(report.skipped.length === 0, `不该有跳过：${JSON.stringify(report.skipped)}`);
+      env.assert(report.reverted.length === 1, `应还原 1 个文件，实际 ${report.reverted.length}`);
+      const back = await env.adapter.read(p);
+      env.assert(back === original, `还原后内容不一致：${JSON.stringify(back)}`);
+      env.assert(
+        state.appliedOps.every((o) => o.undone === true && o.undo === undefined),
+        "还原过的操作要标记 undone，防止重复撤销",
+      );
+      return "patch → 撤销 → 逐字节还原";
     },
   },
 ];

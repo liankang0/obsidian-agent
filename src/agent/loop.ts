@@ -397,6 +397,9 @@ export class AgentLoop {
           };
         } else {
           try {
+            // 先清掉上一次调用的残留：工具只在成功路径上设置撤销数据，
+            // 不主动清空，一次失败的操作可能捡到上一次成功的改前改后
+            ctx.pendingUndo = undefined;
             result = await executeTool(call, ctx);
           } catch (e) {
             // executeTool 内部已兜住，这里只是最后一道保险
@@ -418,7 +421,18 @@ export class AgentLoop {
           // 取不到就会在 AI/03 里留下 `undefined`，所以这里按工具兜底。
           const p = firstString(call.args.path, call.args.from, call.args.to);
           const d = describeChange(call.name, call.args);
-          state.appliedOps.push({ tool: call.name, path: p, at: Date.now(), op: d.op, detail: d.detail });
+          // WP3：工具成功时带出的撤销数据随 op 落盘——「撤销本轮」的全部依据。
+          // 没带上的操作（移动/删除/超大内容）不可撤销，undo.ts 会逐条说明原因。
+          const undo = ctx.pendingUndo;
+          ctx.pendingUndo = undefined;
+          state.appliedOps.push({
+            tool: call.name,
+            path: p,
+            at: Date.now(),
+            op: d.op,
+            detail: d.detail,
+            ...(undo ? { undo } : {}),
+          });
           consecutiveFailures = 0;
         } else if (!result.ok) {
           consecutiveFailures++;

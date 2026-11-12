@@ -12,6 +12,7 @@
 
 - **工具集**：read_file / read_files（批量）/ patch_file / write_file / create_note / move_note / trash_note / trash_folder、search / search_by_tag / list_by_frontmatter、get_links / get_backlinks、read_checklist / record_memory / use_skill、ask_user（任务暂停等用户拍板）
 - **断点续跑**：每步落 checkpoint，杀后台不丢状态；崩溃恢复自动补齐工具调用配对；「继续」接着跑
+- **撤销本轮**：改动记录携带改前/改后文本（各 50k 字符内），面板一键按逆序回放逐字节还原；外部改过的文件跳过并逐条说明，不产生半撤销；移动/删除仍由回收站负责（见 docs/08-ADR.md ADR-010）
 - **护栏**：敏感文件（.env / 密钥类）拒绝访问、越界路径拦截、`.obsidian/` 禁写、受保护文件强制确认、连续失败熔断、单次输出截断与大结果外溢
 - **流式输出**：打字机式增量显示；流不可用自动回退非流式；请求超时（可配置）与流空闲超时分开处理；中止后不重试、晚到的增量丢弃
 - **结果可信度**：四种静默降级（反链 API 缺失、检索超时、记忆读取失败、skill 扫描失败）改为模型可见的「⚠ 本次数据不完整」标记
