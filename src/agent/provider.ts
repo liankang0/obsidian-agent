@@ -35,6 +35,41 @@ interface RawToolCall {
   function?: { name?: string; arguments?: string };
 }
 
+/** requestUrl 返回里用得到的字段（结构化类型，方便 mock） */
+interface RequestUrlResponseLike {
+  status: number;
+  text?: string;
+  json?: unknown;
+}
+
+/** 默认单次请求超时：真机实测 RTT 在 2~11s 之间，90s 足够宽容 */
+const DEFAULT_REQUEST_TIMEOUT_MS = 90_000;
+
+/**
+ * 超时用的竞速 promise。返回要清的 timer：不清的话 Node 测试进程会
+ * 挂到定时器自然到期才退出，浏览器里则白留一个回调。
+ */
+function timeoutRace(ms: number): { promise: Promise<never>; clear: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new ApiError(
+          `请求超时（${Math.round(ms / 1000)}s 没有等到响应）。可在设置里调大「请求超时」。`,
+          undefined,
+          true,
+        ),
+      );
+    }, ms);
+  });
+  return {
+    promise,
+    clear: () => {
+      if (timer !== undefined) clearTimeout(timer);
+    },
+  };
+}
+
 export class Provider {
   constructor(private readonly getConfig: () => AgentConfig) {}
 
@@ -44,6 +79,12 @@ export class Provider {
     if (!base) throw new ApiError("未配置 API Base URL，请先到设置页填写。");
     if (base.endsWith("/chat/completions")) return base;
     return `${base}/chat/completions`;
+  }
+
+  /** 单次请求超时（毫秒）。非流式=整段上限；流式=无新数据的空闲上限 */
+  private requestTimeoutMs(): number {
+    const v = this.getConfig().requestTimeoutMs;
+    return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
   async chat(messages: ChatMessage[], tools: ToolSpec[]): Promise<Completion> {
@@ -219,9 +260,25 @@ export class Provider {
     };
 
     for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
+      // 空闲超时：只要数据还在流就允许长生成；卡死（服务端断流、网络黑洞）
+      // 时不再无限等。中止信号仍由 fetch 自行处理（reader.read() 会随之 reject）。
+      const idle = timeoutRace(this.requestTimeoutMs());
+      let readP: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
+      try {
+        readP = reader.read();
+        const { done, value } = await Promise.race([readP, idle.promise]);
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+      } catch (e) {
+        // 超时或流错误：把流关掉，连接不再挂着
+        reader.cancel().catch(() => undefined);
+        throw e;
+      } finally {
+        idle.clear();
+        idle.promise.catch(() => undefined);
+        // 输掉竞速的 read 晚到 reject（中止/流错误）时静默收尾
+        readP?.catch(() => undefined);
+      }
       let idx = buf.indexOf("\n\n");
       while (idx >= 0) {
         const chunk = buf.slice(0, idx);
@@ -264,29 +321,44 @@ export class Provider {
 
   private async post(body: unknown): Promise<unknown> {
     const cfg = this.getConfig();
-    let res;
+    // requestUrl 不支持中止信号：用竞速实现超时——超时后不再等（底层请求随它去）。
+    // 真机踩过：服务端不回包时 requestUrl 会一直挂着，任务永远停在「思考中」，
+    // 用户只能杀进程。timeout 的错误标记为 retryable，由 loop 的重试逻辑决定要不要再试。
+    const timeout = timeoutRace(this.requestTimeoutMs());
+    const reqP: Promise<RequestUrlResponseLike> = requestUrl({
+      url: this.endpoint(),
+      method: "POST",
+      contentType: "application/json",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cfg.apiKey}`,
+      },
+      body: JSON.stringify(body),
+      throw: false,
+    }).catch((e: unknown) => {
+      throw e instanceof Error ? e : new Error(String(e));
+    });
     try {
-      res = await requestUrl({
-        url: this.endpoint(),
-        method: "POST",
-        contentType: "application/json",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${cfg.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        throw: false,
-      });
+      const res = await Promise.race([reqP, timeout.promise]);
+      return this.parseResponse(res as RequestUrlResponseLike);
     } catch (e) {
-      // 网络层错误（DNS / 超时 / 连接被拒）
+      if (e instanceof ApiError) throw e;
+      // 网络层错误（DNS / 连接被拒）
       const msg = e instanceof Error ? e.message : String(e);
       throw new ApiError(`请求失败：${msg}`, undefined, true);
+    } finally {
+      timeout.clear();
+      // 输掉竞速的一侧晚到时静默收尾，避免 unhandled rejection
+      reqP.catch(() => undefined);
+      timeout.promise.catch(() => undefined);
     }
+  }
 
+  /** 校验状态码并解析 JSON（post 专用的收尾逻辑） */
+  private parseResponse(res: { status: number; text?: string; json?: unknown }): unknown {
     if (res.status >= 400) {
       throw classifyHttpError(res.status, res.text ?? "");
     }
-
     try {
       return res.json;
     } catch {

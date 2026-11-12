@@ -531,6 +531,9 @@ export class AgentLoop {
             messages,
             tools,
             (text) => {
+              // 中止后晚到的字不能再往面板送：abort() 掐断流和 rejection 之间
+              // 有一个窗口，这期间的 delta 会渲染在「已中止」的面板上
+              if (this.aborted) return;
               gotDelta = true;
               onEvent({ type: "assistant_delta", text });
             },
@@ -559,12 +562,15 @@ export class AgentLoop {
           this.abortController = null;
         }
       } catch (e) {
+        // 用户已经中止：绝不能再发起新请求（中止后自动重试等于不听话）
+        if (this.aborted) throw e;
         const retryable = e instanceof ApiError && e.retryable;
         if (!retryable || attempt >= 2) throw e;
         const wait = attempt === 0 ? 1000 : 3000;
         attempt++;
         this.deps.log.warn(`模型调用失败，${wait}ms 后重试（第 ${attempt} 次）：${e instanceof Error ? e.message : e}`);
         await sleep(wait);
+        if (this.aborted) throw e;
       }
     }
   }

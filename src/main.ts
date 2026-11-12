@@ -25,6 +25,8 @@ interface AgentSettings {
   maxTokens: number;
   maxSteps: number;
   confirmAfterFiles: number;
+  /** 单次请求超时（毫秒）。非流式=整段上限；流式=无新数据的空闲上限 */
+  requestTimeoutMs: number;
   /** 隐私模式：禁用全部写工具 */
   readOnly: boolean;
 }
@@ -37,6 +39,7 @@ const DEFAULT_SETTINGS: AgentSettings = {
   maxTokens: 8192,
   maxSteps: 20,
   confirmAfterFiles: 5,
+  requestTimeoutMs: 90_000,
   readOnly: false,
 };
 
@@ -336,6 +339,7 @@ export default class ObsidianAgentPlugin extends Plugin {
       maxTokens: this.settings.maxTokens,
       maxSteps: this.settings.maxSteps,
       confirmAfterFiles: this.settings.confirmAfterFiles,
+      requestTimeoutMs: this.settings.requestTimeoutMs,
     };
   }
 
@@ -512,6 +516,22 @@ class AgentSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.confirmAfterFiles = v;
             await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("请求超时（秒）")
+      .setDesc("等模型响应的上限。非流式是整段上限；流式指「连续这么久没有新内容」才算超时。网络差可调大")
+      .addText((t) =>
+        t
+          .setValue(String(Math.round(this.plugin.settings.requestTimeoutMs / 1000)))
+          .onChange(async (v) => {
+            const sec = Number(v);
+            // 只在输入合法时落盘；非法输入保留旧值，避免存进 0/NaN 让超时彻底失效
+            if (Number.isFinite(sec) && sec >= 10 && sec <= 600) {
+              this.plugin.settings.requestTimeoutMs = Math.round(sec * 1000);
+              await this.plugin.saveSettings();
+            }
           })
       );
 

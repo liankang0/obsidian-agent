@@ -335,9 +335,21 @@ export class Notice {
   constructor(public message: string) {}
 }
 
-/** 集成测试里不应真的发请求；provider 被替换成了脚本替身 */
-export async function requestUrl(): Promise<never> {
-  throw new Error("mock: requestUrl 不应被调用");
+/**
+ * 集成测试里不应真的发请求；默认抛错。
+ * esbuild 打包后模块导出是不可变绑定，直接改 `mock.requestUrl` 影响不到 provider
+ * 里已经内联的引用——所以注入点放在模块内的 hook 对象上。
+ */
+export const __requestUrlHook: {
+  fn: (opts: unknown) => Promise<unknown>;
+} = {
+  fn: async () => {
+    throw new Error("mock: requestUrl 不应被调用");
+  },
+};
+
+export function requestUrl(opts: unknown): Promise<never> {
+  return __requestUrlHook.fn(opts) as Promise<never>;
 }
 
 

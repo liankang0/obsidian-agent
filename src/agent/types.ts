@@ -135,6 +135,11 @@ export interface AgentConfig {
   maxSteps: number;
   /** 单次 run 内累计改几个文件后开始逐次确认 */
   confirmAfterFiles: number;
+  /**
+   * 单次请求超时（毫秒）。非流式是「等整段返回」的上限；流式是「无新数据」的空闲上限
+   * （只要数据还在流就允许长生成）。默认 90000。不填用默认值。
+   */
+  requestTimeoutMs?: number;
 }
 
 /** 跨轮次传给模型的对话历史（只保留 user/assistant 文本，不带工具细节） */
