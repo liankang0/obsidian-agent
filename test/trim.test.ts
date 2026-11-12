@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { finalAnswer } from "../src/agent/answer";
-import { capTurn, slimHistory, HISTORY_TURN_CAP } from "../src/agent/trim";
+import { HISTORY_TURN_CAP } from "../src/agent/budgets";
+import { capTurn, slimHistory } from "../src/agent/trim";
 import type { RunState } from "../src/agent/types";
 
 function state(partial: Partial<RunState> & { messages: RunState["messages"] }): RunState {

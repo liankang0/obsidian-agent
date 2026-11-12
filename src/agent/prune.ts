@@ -1,4 +1,5 @@
 import type { ChatMessage } from "./types";
+import { CONTEXT_CHARS_GATE, PRUNE_MAX_MESSAGES } from "./budgets";
 
 /**
  * 上下文瘦身：把「早就用完的」工具结果换成一行占位。
@@ -42,15 +43,6 @@ export interface PruneResult {
   savedChars: number;
 }
 
-/**
- * 上下文里超过这个字符数才值得动手（约 5.3k token）。
- *
- * 原来是 24000。翻 63 个真机存档量了一下：中位数 4641 字符，真实闲聊/小任务根本到不了
- * 24000——也就是说这个阈值在真实使用里等于「永不触发」，只有自检能碰它。
- * 而 24000 这个数字本来是从「一个 9 步任务烧了 92405 prompt token」那次反推的，
- * 那次的上下文峰值是 31277 字符，早就越过 16000 了。
- */
-const CONTEXT_CHARS_GATE = 16000;
 /** 省得太少就别动：占位本身也要花 token，来回折腾不划算 */
 const MIN_SAVE = 1500;
 
@@ -62,7 +54,7 @@ const MIN_SAVE = 1500;
  * 所以这里看的是「当前上下文有多大」——一次性算清，语义直白。
  */
 export function shouldPrune(contextChars: number, messageCount: number): boolean {
-  return contextChars > CONTEXT_CHARS_GATE || messageCount > 48;
+  return contextChars > CONTEXT_CHARS_GATE || messageCount > PRUNE_MAX_MESSAGES;
 }
 
 /** 这次瘦身值不值得做：先算能省多少，省得太少就别动 */

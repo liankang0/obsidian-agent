@@ -3,7 +3,8 @@ import { ApprovalStore } from "./approvals";
 import { CHANGELOG_PATH, appendRecord } from "./changelog";
 import { describeChange } from "./changes";
 import { buildSkillIndex, scanSkills, type SkillMeta } from "./skills";
-import { HISTORY_TURN_CAP, slimHistory } from "./trim";
+import { HISTORY_TURN_CAP } from "./budgets";
+import { slimHistory } from "./trim";
 import {
   buildChecklistBlock,
   buildMemoryBlock,

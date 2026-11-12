@@ -7,7 +7,8 @@
 
 import type { DataAdapter } from "obsidian";
 
-import { MAX_INLINE_CHARS, SPILL_HEAD_CHARS, spillFilePath, spillNotice } from "./spill";
+import { MAX_INLINE_CHARS, SPILL_HEAD_CHARS } from "./budgets";
+import { spillFilePath, spillNotice } from "./spill";
 
 export interface SerializeDeps {
   adapter: DataAdapter;

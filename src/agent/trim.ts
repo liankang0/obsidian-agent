@@ -7,11 +7,8 @@
  */
 
 import type { HistoryTurn } from "./types";
+import { HISTORY_BUDGET, HISTORY_TURN_CAP } from "./budgets";
 
-/** 历史总共允许多少字符（不含本轮用户输入） */
-export const HISTORY_BUDGET = 4000;
-/** 单条超过这个长度就截断：留头留尾，中间标省略 */
-export const HISTORY_TURN_CAP = 1200;
 const HEAD = 800;
 const TAIL = 300;
 

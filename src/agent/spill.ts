@@ -32,12 +32,6 @@ export function spillDir(): string {
 /** 默认外溢目录常量：仅供既有测试引用，运行时请用 spillDir() */
 export const SPILL_DIR = DEFAULT_SPILL_DIR;
 
-/** 超过这个长度就外溢（字符） */
-export const MAX_INLINE_CHARS = 4000;
-
-/** 外溢后仍直接放进上下文的开头长度 */
-export const SPILL_HEAD_CHARS = 1200;
-
 /** 保留最近多少天的外溢文件 */
 export const SPILL_KEEP_DAYS = 7;
 

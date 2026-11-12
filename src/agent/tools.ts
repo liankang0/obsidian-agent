@@ -7,9 +7,8 @@ import { checkProtected } from "./guard";
 import { findSkill, readSkillBody, scanSkills, type SkillMeta } from "./skills";
 import { parseChecklist, POST_CHECKLIST_PATH, PRE_CHECKLIST_PATH, recordMemory } from "./memory";
 import type { ApprovalStore } from "./approvals";
+import { BATCH_MAX_FILES, BATCH_PER_FILE_CHARS, BATCH_TOTAL_CHARS, MAX_OUTPUT_CHARS } from "./budgets";
 
-/** 单次工具输出的硬上限，防止一次读取把上下文撑爆 */
-const MAX_OUTPUT_CHARS = 20_000;
 /** 检索类工具的结果条数上限 */
 const MAX_HITS = 50;
 
@@ -156,9 +155,7 @@ async function readFile(ctx: ToolContext, args: Record<string, unknown>): Promis
 
 
 /** 批量读的硬上限：一次最多 20 个、单篇 3000 字符、总计 12000 字符 */
-const BATCH_MAX_FILES = 20;
-const BATCH_PER_FILE_CHARS = 3000;
-const BATCH_TOTAL_CHARS = 12000;
+// 批量读取预算见 budgets.ts：一次拿多少由全局统一分配
 
 /**
  * 一次读多篇。
@@ -556,7 +553,9 @@ reg({
   spec: {
     name: "read_file",
     description:
-      "读取一篇笔记的内容。默认整篇返回；超过 20000 字符会被截断，此时必须改用 from/to 分段读取。修改任何文件前都应先读它。",
+      "读取一篇笔记的内容。默认整篇返回；超过 " +
+        MAX_OUTPUT_CHARS +
+        " 字符会被截断，此时必须改用 from/to 分段读取。修改任何文件前都应先读它。",
     parameters: {
       type: "object",
       properties: {
