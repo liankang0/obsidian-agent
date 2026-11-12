@@ -496,6 +496,8 @@ export class AgentLoop {
     let attempt = 0;
     for (;;) {
       let gotDelta = false;
+      // E2 实验（07 文档）需要每次调用的真实 RTT；只有完成时刻没法算耗时
+      const startedAt = Date.now();
       try {
         const p = this.deps.provider as {
           chatStream?: (
@@ -507,7 +509,12 @@ export class AgentLoop {
           chat: (m: ChatMessage[], t: ReturnType<typeof getToolSpecs>) => Promise<Completion>;
         };
         if (typeof p.chatStream !== "function") {
-          return await p.chat(messages, tools);
+          const r = await p.chat(messages, tools);
+          this.deps.log.info(
+            `[${this.currentRunId ?? "-"}] 非流式调用成功：${r.content.length} 字符 / ` +
+              `token ${r.usage?.promptTokens ?? 0}+${r.usage?.completionTokens ?? 0} / 耗时 ${Date.now() - startedAt}ms`,
+          );
+          return r;
         }
         const controller = new AbortController();
         this.abortController = controller;
@@ -525,6 +532,7 @@ export class AgentLoop {
             `[${this.currentRunId ?? "-"}] 流式调用成功：${streamed.content.length} 字符` +
               (streamed.toolCalls.length > 0 ? ` / ${streamed.toolCalls.length} 个工具调用` : "") +
               ` / finish=${streamed.finishReason ?? "-"}` +
+              ` / 耗时 ${Date.now() - startedAt}ms` +
               (streamed.reasoningChars ? ` / 思考 ${streamed.reasoningChars} 字符` : "") +
               ` / token ${streamed.usage?.promptTokens ?? 0}+${streamed.usage?.completionTokens ?? 0}` +
               (streamed.usage?.cachedTokens ? `（缓存命中 ${streamed.usage.cachedTokens}）` : "") +
