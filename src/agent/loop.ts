@@ -9,10 +9,8 @@ import {
   buildChecklistBlock,
   buildMemoryBlock,
   compactWorkingFile,
-  HISTORY_PATH,
   readChecklists,
   readMemory,
-  WORKING_PATH,
   type MemoryBundle,
 } from "./memory";
 import { repairToolPairing } from "./pairing";
@@ -22,6 +20,8 @@ import { serializeToolResult } from "./serialize";
 import { ApiError, Provider } from "./provider";
 import { executeTool, getToolSpecs, toolNames, type ToolContext } from "./tools";
 import { AWAITING_HINT } from "./types";
+import { defaultLayout, resolveLayout, type WorkspaceLayout, type WorkspaceSettings } from "./workspace";
+import { parseProtectedPaths } from "./guard";
 import type { AgentConfig, ChatMessage, Completion, HistoryTurn, LoopEvent, RunState, ToolCall, Usage } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -43,10 +43,22 @@ const WRITE_TOOLS = new Set([
   "trash_folder",
 ]);
 
-export function buildSystemPrompt(app: App, skillBlock = "", memoryBlock = "", checklistBlock = ""): string {
+export function buildSystemPrompt(
+  app: App,
+  skillBlock = "",
+  memoryBlock = "",
+  checklistBlock = "",
+  /** WP3：工作区布局摘要——第 9 条随实际路径走，未启用时整条省去 */
+  workspace?: { aiEnabled: boolean; changelogPath: string },
+): string {
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const vaultName = (app.vault as unknown as { getName?: () => string }).getName?.() ?? "当前库";
+  // 工作区未启用时没有「插件自动写入的修改记录」，这条禁令就成了无的放矢
+  const principle9 =
+    workspace && !workspace.aiEnabled
+      ? ""
+      : `9. **不要自己改 \`${workspace?.changelogPath ?? CHANGELOG_PATH}\`**。任务结束由插件自动写入，你再去 patch 会被准则守卫拒绝，白浪费一步。`;
 
   return `你是运行在 Obsidian 手机端里的文件助手。用户用自然语言下达指令，你通过工具直接读写这个 Vault。
 
@@ -66,8 +78,7 @@ ${memoryBlock ? `${memoryBlock}\n` : ""}${checklistBlock ? `${checklistBlock}\n`
 6. **不要碰 \`.obsidian/\`**。那是插件配置目录，改了会破坏用户的 Obsidian。
 7. **密钥类文件会被拒绝**。文件名含 .env / credentials / id_rsa / *.pem 等的文件一律拒绝访问（包括读取），这是有意为之，不要换路径重试，也不要猜内容。
 8. **一次只做一件事**。用户的指令包含多步时，按顺序做，每步做完再做下一步。
-9. **不要自己改 \`AI/03-修改记录.md\`**。任务结束由插件自动写入，你再去 patch 会被准则守卫拒绝，白浪费一步。
-10. **删东西一律走回收站**（trash_note / trash_folder），不要用 write_file 清空内容冒充删除。
+${principle9 ? `${principle9}\n` : ""}10. **删东西一律走回收站**（trash_note / trash_folder），不要用 write_file 清空内容冒充删除。
 11. **不要无谓地读大文件**。整篇超过 500 行时，用 from/to 只读需要的部分。
     要读 3 个以上文件时**用 read_files 一次拿（最多 20 个）**，不要一个一个 read_file：每多一步，整个上下文就要重发一遍。
 12. **要让用户拍板时用 ask_user 工具**（批量改动的方案、有歧义的需求、删除前的确认）。不要用普通文字提问：普通文字会被当成任务已完成，用户不会知道还要回话，任务就停在那儿了。
@@ -114,6 +125,11 @@ export interface LoopDeps {
    * 同一次会话内即生效，不再要求重载插件。
    */
   getReadOnly?: () => boolean;
+  /**
+   * WP3：AI 工作区设置（目录、额外 skill 目录、额外保护路径）。
+   * 每次 run 热读取并重新解析布局；不传 = 永远按旧默认布局（AI/ 目录）。
+   */
+  getLayoutOpts?: () => WorkspaceSettings;
   /** 会话内审批记忆（跨 run 复用，清理时机与插件生命周期一致） */
   approvals: ApprovalStore;
 }
@@ -135,6 +151,12 @@ export class AgentLoop {
   private memory: MemoryBundle = { working: "", history: "" };
   /** Step 1/3 的检查清单（解析后压缩，不塞全文） */
   private checklists: Awaited<ReturnType<typeof readChecklists>> = { pre: [], post: [] };
+  /** WP3：本 run 的工作区布局（start/resume 时按 vault 实况解析） */
+  private layout: WorkspaceLayout = defaultLayout();
+  /** WP3：工作区设置原文（保护路径等派生信息从这里来） */
+  private layoutSettings: WorkspaceSettings | undefined;
+  /** WP3：解析后的额外保护路径（confirm 级） */
+  private extraConsentPaths: string[] = [];
 
   constructor(private readonly deps: LoopDeps) {}
 
@@ -164,6 +186,7 @@ export class AgentLoop {
     }
     this.aborted = false;
     this.running = true;
+    this.refreshLayout();
     await this.refreshContext();
 
     const state: RunState = {
@@ -179,6 +202,7 @@ export class AgentLoop {
             buildSkillIndex(this.skills, this.skillsDegraded || undefined),
             buildMemoryBlock(this.memory),
             buildChecklistBlock(this.checklists),
+            { aiEnabled: this.layout.aiEnabled, changelogPath: this.layout.changelogPath },
           ) },
         // 上一轮说过的话带进来，否则「把它改成…」里的「它」无处可指。
         // 按字符预算瘦身：条数上限挡不住「一条就是两千字表格」的情况
@@ -204,15 +228,36 @@ export class AgentLoop {
   }
 
   /**
+   * WP3：每次任务开始/恢复都重新解析工作区布局。
+   * 设置页改了目录/保护路径，下一次任务就生效——和隐私模式同一套热读取思路。
+   */
+  private refreshLayout(): void {
+    this.layoutSettings = this.deps.getLayoutOpts?.();
+    this.layout = resolveLayout(this.deps.app, this.layoutSettings);
+    this.extraConsentPaths = this.layoutSettings
+      ? parseProtectedPaths(this.layoutSettings.protectedPaths)
+      : [];
+    // 显式指定了目录但目录不存在：这是配置错误，必须说出口——自动探测失败
+    // 则保持安静（空 vault 的正常状态，说出来反而是噪音）
+    const wanted = (this.layoutSettings?.aiDir ?? "").trim();
+    if (wanted && !this.layout.aiEnabled) {
+      this.deps.log.warn(`AI 工作区目录「${wanted}」在库中不存在，记忆/修改记录/检查清单功能未启用`);
+    }
+  }
+
+  /**
    * 每次任务开始/恢复都重新读一遍注入材料。
    *
    * 曾经这里只有 start() 读了 skills 和 memory，checklists 只在 resume() 里读——
    * 结果真实任务跑起来时清单块是空的，自检却因为走了另一条路全绿。
    * 三份材料必须同进同出，所以收成一个函数。
+   *
+   * WP3：工作区未启用时全部跳过——不注入空块、不清理 04、不读清单，
+   * 一个「找不到 AI/xx」的报错都不该有。
    */
   private async refreshContext(): Promise<void> {
-    // 用户可能刚改过 skills/ 里的 md，每轮重新扫
-    const scan = await scanSkills(this.deps.app);
+    // 用户可能刚改过 skills/ 里的 md，每轮重新扫；目录名单跟布局走
+    const scan = await scanSkills(this.deps.app, this.layout.skillDirs);
     this.skills = scan.skills;
     this.skillsDegraded = scan.degraded ?? "";
     const dirtySkills = this.skills.filter((s) => (s.warnings ?? []).length > 0);
@@ -227,10 +272,18 @@ export class AgentLoop {
         this.deps.log.warn(msg);
       }
     }
+    if (!this.layout.aiEnabled) {
+      this.memory = { working: "", history: "" };
+      this.checklists = { pre: [], post: [] };
+      return;
+    }
     // 先把 04 里老的清进 05，再读——否则模型看到的还是那堆越攒越长的旧任务
     if (!this.isReadOnly()) {
       try {
-        const { archived, dropped } = await compactWorkingFile(this.deps.app);
+        const { archived, dropped } = await compactWorkingFile(this.deps.app, {
+          working: this.layout.workingPath,
+          history: this.layout.historyPath,
+        });
         if (archived > 0 || dropped > 0) {
           this.deps.log.info(
             `04 清理：挪 ${archived} 条老任务到 05${dropped > 0 ? `，丢掉 ${dropped} 条自检记录` : ""}`,
@@ -240,8 +293,14 @@ export class AgentLoop {
         this.deps.log.warn(`04 清理失败（不影响任务）：${e instanceof Error ? e.message : String(e)}`);
       }
     }
-    this.memory = await readMemory(this.deps.app);
-    this.checklists = await readChecklists(this.deps.app);
+    this.memory = await readMemory(this.deps.app, {
+      working: this.layout.workingPath,
+      history: this.layout.historyPath,
+    });
+    this.checklists = await readChecklists(this.deps.app, {
+      pre: this.layout.preChecklistPath,
+      post: this.layout.postChecklistPath,
+    });
   }
 
   /** 从 checkpoint 继续。注意：绝不自动调用，必须由用户确认。 */
@@ -249,6 +308,7 @@ export class AgentLoop {
     if (this.running) throw new Error("已有任务在运行。");
     this.aborted = false;
     this.running = true;
+    this.refreshLayout();
     await this.refreshContext();
     state.status = "running";
     state.pendingToolCall = undefined;
@@ -486,12 +546,14 @@ export class AgentLoop {
         (state.error ? `，原因：${state.error}` : ""),
     );
     // 准则 Step 4：改了文件就得回写 04/05。插件不代替模型编内容，但必须提醒。
-    if (state.appliedOps.length > 0) {
+    // WP3：工作区未启用时没有 04/05，提醒整条跳过
+    if (state.appliedOps.length > 0 && this.layout.aiEnabled) {
       const touched = new Set(state.appliedOps.map((op) => op.path));
       // 注意：record_memory 写的也是 04/05，但它不进 appliedOps（记账不算文件改动），
       // 所以必须靠 memoryWritten 这个标，否则每轮都会误报「没回写 04/05」。
       const wroteMemory = state.memoryWritten === true;
-      if (!wroteMemory && !touched.has(WORKING_PATH) && !touched.has(HISTORY_PATH)) {
+      if (!wroteMemory && !touched.has(this.layout.workingPath) && !touched.has(this.layout.historyPath)) {
+        // 04/05 是文件名前缀（04-临时工作记忆区/05-对话历史记录区），目录可配置但前缀不变
         const msg = `改了 ${touched.size} 个文件，但没回写 04/05（准则 Step 4）。需要的话用 record_memory 补一条。`;
         this.deps.log.warn(`[${state.runId}] ${msg}`);
         onEvent({ type: "status", text: msg });
@@ -499,9 +561,12 @@ export class AgentLoop {
     }
 
     // 准则第 4 条：改过就记一笔。一次任务一条，不是一次写入一条。
-    if (state.appliedOps.length > 0) {
-      const wrote = await appendRecord(this.deps.app, state, this.deps.log);
-      if (wrote) this.deps.log.info(`[${state.runId}] 已记入 ${CHANGELOG_PATH}`);
+    // WP3：工作区未启用时不写修改记录——空 vault 不该凭空长出 AI/03
+    if (state.appliedOps.length > 0 && this.layout.aiEnabled) {
+      const wrote = await appendRecord(this.deps.app, state, this.deps.log, {
+        changelogPath: this.layout.changelogPath,
+      });
+      if (wrote) this.deps.log.info(`[${state.runId}] 已记入 ${this.layout.changelogPath}`);
     }
 
     onEvent({ type: "done", state });
@@ -628,6 +693,9 @@ export class AgentLoop {
       skills: this.skills,
       // WP4：破坏性操作配额按 run 记——这里是每个 run 的新起点
       destructivePaths: [],
+      // WP3：工作区布局与额外保护路径，守卫和记忆工具按它路由
+      layout: this.layout,
+      ...(this.extraConsentPaths.length > 0 ? { protectedPaths: this.extraConsentPaths } : {}),
     };
   }
 

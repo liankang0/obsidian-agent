@@ -121,8 +121,14 @@ function stamp(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** 撤销本身也是一次修改：按准则第 4 条在 AI/03 记一笔。失败不影响撤销本身。 */
-async function recordUndo(app: App, state: RunState, report: UndoReport, log: Log): Promise<void> {
+/** 撤销本身也是一次修改：按准则第 4 条在修改记录里记一笔。失败不影响撤销本身。 */
+async function recordUndo(
+  app: App,
+  state: RunState,
+  report: UndoReport,
+  log: Log,
+  changelogPath: string,
+): Promise<void> {
   const paths = [...report.reverted, ...report.skipped.map((s) => s.path)];
   if (paths.length === 0 || isSelftestOnly(paths)) return;
   const lines = [
@@ -134,14 +140,14 @@ async function recordUndo(app: App, state: RunState, report: UndoReport, log: Lo
     "",
   ];
   try {
-    const existing = app.vault.getAbstractFileByPath(CHANGELOG_PATH);
+    const existing = app.vault.getAbstractFileByPath(changelogPath);
     if (existing instanceof TFile) {
       const current = await app.vault.read(existing);
       // 幂等：同一次撤销不重复记账
       if (current.includes(`撤销本轮（run ${state.runId}）`)) return;
       await app.vault.process(existing, (data) => `${data.replace(/\s*$/, "")}\n${lines.join("\n")}`);
     } else {
-      await app.vault.create(CHANGELOG_PATH, `# AI 修改记录\n\n> 由 Local Vault Agent 自动追加。\n${lines.join("\n")}`);
+      await app.vault.create(changelogPath, `# AI 修改记录\n\n> 由 Local Vault Agent 自动追加。\n${lines.join("\n")}`);
     }
   } catch (e) {
     log.warn(`撤销记录写入失败（不影响撤销本身）：${e instanceof Error ? e.message : String(e)}`);
@@ -155,7 +161,15 @@ async function recordUndo(app: App, state: RunState, report: UndoReport, log: Lo
  * 就能得到「重启后也不会重复撤销」的保证。跳过的文件保留 undo 数据，外部冲突
  * 解决后（比如手动恢复了回收站文件）再点一次可以重试。
  */
-export async function undoRun(app: App, state: RunState, log: Log): Promise<UndoReport> {
+export interface UndoOpts {
+  /**
+   * 修改记录的实际路径；缺省 = 旧默认 AI/03-修改记录.md。
+   * 传空串 = AI 工作区未启用：跳过记账，绝不凭空创建记录文件（Doc2-WP3）。
+   */
+  changelogPath?: string;
+}
+
+export async function undoRun(app: App, state: RunState, log: Log, opts?: UndoOpts): Promise<UndoReport> {
   const report: UndoReport = { reverted: [], skipped: [] };
   const groups = groupByPath(state.appliedOps);
 
@@ -219,6 +233,7 @@ export async function undoRun(app: App, state: RunState, log: Log): Promise<Undo
   log.info(
     `撤销本轮（run ${state.runId}）：还原 ${report.reverted.length}，跳过 ${report.skipped.length}`,
   );
-  await recordUndo(app, state, report, log);
+  const changelogPath = opts?.changelogPath ?? CHANGELOG_PATH;
+  if (changelogPath) await recordUndo(app, state, report, log, changelogPath);
   return report;
 }

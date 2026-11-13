@@ -42,7 +42,11 @@ const patchScript: Completion[] = [
 
 test("准则 Step 4：调过 record_memory 就不再误报「没回写 04/05」", async () => {
   const warns: string[] = [];
-  const app = new MockApp({ "a.md": "旧内容\n" });
+  // WP3：loop 按 vault 实况解析工作区，裸库不再有 AI/04——补上夹具才有 Step 4 语境
+  const app = new MockApp({
+    "a.md": "旧内容\n",
+    "AI/04-临时工作记忆区.md": "# 04 · 临时工作记忆区\n\n## 当前活跃任务\n\n",
+  });
   const script: Completion[] = [
     {
       content: "先改文件",
@@ -66,7 +70,11 @@ test("准则 Step 4：调过 record_memory 就不再误报「没回写 04/05」"
 
 test("准则 Step 4：改完文件又没记记忆，才提醒（别再误伤）", async () => {
   const warns: string[] = [];
-  const app = new MockApp({ "a.md": "旧内容\n" });
+  // 同上：提醒的前提是工作区已启用（库里有 AI/ 目录）
+  const app = new MockApp({
+    "a.md": "旧内容\n",
+    "AI/04-临时工作记忆区.md": "# 04 · 临时工作记忆区\n\n## 当前活跃任务\n\n",
+  });
   const loop = makeLoop(app, patchScript, warns);
   await loop.start("改 a.md", () => undefined);
   assert.equal(warns.filter((w) => w.includes("准则 Step 4")).length, 1);

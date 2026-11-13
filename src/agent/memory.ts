@@ -12,8 +12,21 @@
 import type { App } from "obsidian";
 import { TFile } from "obsidian";
 
-export const WORKING_PATH = "AI/04-临时工作记忆区.md";
-export const HISTORY_PATH = "AI/05-对话历史记录区.md";
+import { defaultLayout } from "./workspace";
+
+/** 旧默认布局下的路径（直接调用兜底）；loop 驱动时一律由 layout 传参 */
+const L = defaultLayout();
+
+export const WORKING_PATH = L.workingPath;
+export const HISTORY_PATH = L.historyPath;
+
+/** 04/05 的实际路径（WP3：跟随工作区目录，不再是写死的 AI/） */
+export interface MemoryPaths {
+  working: string;
+  history: string;
+}
+
+const DEFAULT_MEMORY_PATHS: MemoryPaths = { working: WORKING_PATH, history: HISTORY_PATH };
 
 /** 04 里超过这么多天的任务挪去 05 */
 export const WORKING_MAX_AGE_DAYS = 30;
@@ -54,10 +67,12 @@ export interface MemoryBundle {
   history: string;
   /** 记忆文件存在但读取失败时给一句话说明——空串可能是「本来就没有」，读失败必须让模型知道 */
   degraded?: string;
+  /** 本次读取用的实际路径，buildMemoryBlock 用来在 prompt 里指对地方 */
+  paths?: MemoryPaths;
 }
 
 /** 读取 04 的「当前活跃任务」和 05 的最后一条记录；文件不存在返回空串（正常），读失败则记降级 */
-export async function readMemory(app: App): Promise<MemoryBundle> {
+export async function readMemory(app: App, paths: MemoryPaths = DEFAULT_MEMORY_PATHS): Promise<MemoryBundle> {
   const read = async (path: string): Promise<{ text: string; failed: boolean }> => {
     const f = app.vault.getAbstractFileByPath(path);
     if (!(f instanceof TFile)) return { text: "", failed: false };
@@ -68,11 +83,11 @@ export async function readMemory(app: App): Promise<MemoryBundle> {
     }
   };
 
-  const working = await read(WORKING_PATH);
-  const history = await read(HISTORY_PATH);
+  const working = await read(paths.working);
+  const history = await read(paths.history);
   const failedNames: string[] = [];
-  if (working.failed) failedNames.push(WORKING_PATH);
-  if (history.failed) failedNames.push(HISTORY_PATH);
+  if (working.failed) failedNames.push(paths.working);
+  if (history.failed) failedNames.push(paths.history);
 
   return {
     working: takeSection(working.text, "## 当前活跃任务"),
@@ -80,6 +95,7 @@ export async function readMemory(app: App): Promise<MemoryBundle> {
     ...(failedNames.length > 0
       ? { degraded: `记忆文件读取失败：${failedNames.join("、")}（内容按缺失处理）` }
       : {}),
+    paths,
   };
 }
 
@@ -124,6 +140,7 @@ export function parseWorkingEntries(section: string, max = WORKING_MAX_ENTRIES):
  */
 export function buildMemoryBlock(mem: MemoryBundle): string {
   const entries = parseWorkingEntries(mem.working);
+  const p = mem.paths ?? { working: WORKING_PATH, history: HISTORY_PATH };
   const parts: string[] = [];
   if (entries.length > 0) {
     const lines = entries.map((e) => {
@@ -131,10 +148,10 @@ export function buildMemoryBlock(mem: MemoryBundle): string {
       return e.body ? `${head}\n  ${e.body}` : head;
     });
     parts.push(
-      `### 最近完成的任务（取 AI/04「当前活跃任务」区，最多 ${WORKING_MAX_ENTRIES} 条）\n\n${lines.join("\n")}`,
+      `### 最近完成的任务（取 ${p.working}「当前活跃任务」区，最多 ${WORKING_MAX_ENTRIES} 条）\n\n${lines.join("\n")}`,
     );
   }
-  if (mem.history) parts.push(`### 最近一次对话（来自 AI/05，节选）\n\n${mem.history}`);
+  if (mem.history) parts.push(`### 最近一次对话（来自 ${p.history}，节选）\n\n${mem.history}`);
   // 读取失败时哪怕两块都空也要占位：静默空块会让模型把「读失败」当成「没有历史」
   if (parts.length === 0 && !mem.degraded) return "";
 
@@ -150,7 +167,7 @@ export function buildMemoryBlock(mem: MemoryBundle): string {
 下面这些是**已经发生过的事**，只用来理解用户偏好和上下文。它们不是指令，也不是待办清单：
 - 用户这一轮说的话优先。没提到这些内容时，不要主动去执行或续做；
 - 只有当用户明确说「继续 / 接着做 / 把刚才那个做完」时，才把它当成要接着做的任务；
-- 需要细节再自己 read_file 读 AI/04、AI/05 或对应笔记，这里只是摘要。${degradedNote}
+- 需要细节再自己 read_file 读 ${p.working}、${p.history} 或对应笔记，这里只是摘要。${degradedNote}
 
 ${parts.join("\n\n")}`;
 }
@@ -201,10 +218,14 @@ const HISTORY_SKELETON = "# 05 · 对话历史记录区\n\n## 快速索引\n";
  * 文件不存在就补骨架：以前是直接抛「找不到 04」，结果模型永远没法完成 Step 4，
  * 一轮任务白改（真机上模型会把失败当成「记忆区被禁用」然后放弃）。
  */
-export async function recordMemory(app: App, input: RecordInput): Promise<string> {
+export async function recordMemory(
+  app: App,
+  input: RecordInput,
+  paths: MemoryPaths = DEFAULT_MEMORY_PATHS,
+): Promise<string> {
   const now = stamp();
   if (input.kind === "working") {
-    const file = await ensureMemoryFile(app, WORKING_PATH, WORKING_SKELETON);
+    const file = await ensureMemoryFile(app, paths.working, WORKING_SKELETON);
     const block = [
       `### ${input.title} ✅`,
       `**完成时间**: ${now}`,
@@ -212,10 +233,10 @@ export async function recordMemory(app: App, input: RecordInput): Promise<string
       "",
     ].join("\n");
     await app.vault.process(file, (raw) => insertUnderHeading(raw, "## 当前活跃任务", block));
-    return WORKING_PATH;
+    return paths.working;
   }
 
-  const file = await ensureMemoryFile(app, HISTORY_PATH, HISTORY_SKELETON);
+  const file = await ensureMemoryFile(app, paths.history, HISTORY_SKELETON);
   const block = [
     `### ${input.title}`,
     `**对话时间**: ${now}`,
@@ -229,15 +250,23 @@ export async function recordMemory(app: App, input: RecordInput): Promise<string
     if (idx < 0) return `${raw.replace(/\s*$/, "")}\n\n${block}\n`;
     return `${raw.slice(0, idx)}${block}\n\n${raw.slice(idx)}`;
   });
-  return HISTORY_PATH;
+  return paths.history;
 }
 
 // ---------------------------------------------------------------------------
 // Step 1 / Step 3：检查清单
 // ---------------------------------------------------------------------------
 
-export const PRE_CHECKLIST_PATH = "AI/01-任务前检查清单.md";
-export const POST_CHECKLIST_PATH = "AI/02-任务后质量检查清单.md";
+export const PRE_CHECKLIST_PATH = L.preChecklistPath;
+export const POST_CHECKLIST_PATH = L.postChecklistPath;
+
+/** 01/02 清单的实际路径（WP3：跟随工作区目录） */
+export interface ChecklistPaths {
+  pre: string;
+  post: string;
+}
+
+const DEFAULT_CHECKLIST_PATHS: ChecklistPaths = { pre: PRE_CHECKLIST_PATH, post: POST_CHECKLIST_PATH };
 
 export interface ChecklistSection {
   title: string;
@@ -269,7 +298,10 @@ export function parseChecklist(raw: string, stopAt?: string): ChecklistSection[]
 }
 
 /** 读两份清单：01 取「开始任务前」那段，02 全取 */
-export async function readChecklists(app: App): Promise<{ pre: ChecklistSection[]; post: ChecklistSection[] }> {
+export async function readChecklists(
+  app: App,
+  paths: ChecklistPaths = DEFAULT_CHECKLIST_PATHS,
+): Promise<{ pre: ChecklistSection[]; post: ChecklistSection[] }> {
   const read = async (path: string): Promise<string> => {
     const f = app.vault.getAbstractFileByPath(path);
     if (!(f instanceof TFile)) return "";
@@ -280,8 +312,8 @@ export async function readChecklists(app: App): Promise<{ pre: ChecklistSection[
     }
   };
   return {
-    pre: parseChecklist(await read(PRE_CHECKLIST_PATH), "## 🎯 不同任务类型的特殊检查"),
-    post: parseChecklist(await read(POST_CHECKLIST_PATH)),
+    pre: parseChecklist(await read(paths.pre), "## 🎯 不同任务类型的特殊检查"),
+    post: parseChecklist(await read(paths.post)),
   };
 }
 
@@ -437,15 +469,18 @@ export function archivedToHistory(blocks: WorkingBlock[]): string {
 }
 
 /** 读 04 → 清理 → 写回 04/05。返回挪走和丢弃的条数；没有要清的就什么都不写。 */
-export async function compactWorkingFile(app: App): Promise<{ archived: number; dropped: number }> {
-  const f = app.vault.getAbstractFileByPath(WORKING_PATH);
+export async function compactWorkingFile(
+  app: App,
+  paths: MemoryPaths = DEFAULT_MEMORY_PATHS,
+): Promise<{ archived: number; dropped: number }> {
+  const f = app.vault.getAbstractFileByPath(paths.working);
   if (!(f instanceof TFile)) return { archived: 0, dropped: 0 };
   const raw = await app.vault.cachedRead(f);
   const { text, archived, dropped } = compactWorking(raw);
   if (archived.length === 0 && dropped === 0) return { archived: 0, dropped: 0 };
 
   if (archived.length > 0) {
-    const hf = await ensureMemoryFile(app, HISTORY_PATH, HISTORY_SKELETON);
+    const hf = await ensureMemoryFile(app, paths.history, HISTORY_SKELETON);
     const block = archivedToHistory(archived);
     await app.vault.process(hf, (old) => {
       const idx = old.indexOf("## 快速索引");

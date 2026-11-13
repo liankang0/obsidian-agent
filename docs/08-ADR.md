@@ -163,5 +163,22 @@
 
 **替代方案**：诊断全文截断入日志（仍是原文副本，否决）；所有工具结果都包裹（search 摘录噪声太大，否决）；删除只弹一次总确认（首删就该让用户看清目标，否决）。
 
+---
 
+## ADR-012 可移植性解耦：AI 工作区布局进设置，空 vault 不动手脚
 
+**背景**：上架开源（Doc2-WP3）前，`AI/03-05`、`AI/01/02`、`skills/` 全部硬编码在各模块常量里。空 vault 装上插件跑一轮任务会凭空创建 `AI/` 目录、往 prompt 里注入空记忆块、日志里报「找不到 AI/03」——这是把作者自己的库结构强加给每一个社区用户，也是 Marketplace 审核里「侵入性」的直接扣分项。
+
+**决策**：
+- 新增 `src/agent/workspace.ts`：`WorkspaceLayout` 是所有工作区路径的单一来源。`resolveLayout(app, settings)` 解析顺序：**显式指定的目录（必须真实存在）> 自动探测 `AI/` > 未启用**。`defaultLayout()` 返回旧硬编码布局，供不经 loop 的直接调用（工具层单测、自检剧本）零改动。
+- **未启用 = 全面静默**：loop 不注入记忆/清单块、不清理 04、不写 03、不提醒 Step 4，system prompt 去掉「不要自己改 03」的原则 9；`record_memory` 返回 `written:false` + 一句说明（是跳过，不是错误）；`read_checklist` 返回明确的未启用错误。任何路径都不凭空创建目录。
+- **守卫与 skill 目录随布局派生**：00-06 禁写规则从 `aiDir` 派生（含 `<aiDir>/skills/`），根级 `skills/` 永远禁写；`scanSkills` 按解析出的目录名单扫描。
+- **设置三项 + 热读取**：`aiDir`（空=自动探测）、`skillDirs`（逗号分隔）、`protectedPaths`（逗号分隔的额外 confirm 级保护，目录以 `/` 结尾）。loop 每次 run 经 `getLayoutOpts` 重新解析——与 WP4 隐私模式同一套 getter 热生效机制；设置页实时显示探测状态（✓/⚠ 一行说明）。
+- 记账函数（`appendRecord` / `undoRun` / `readMemory` / `recordMemory` / `compactWorkingFile` / `readChecklists` / `checkProtected`）全部接受可选路径/规则参数，缺省值 = 旧硬编码 → 既有直接调用行为不变。
+
+**后果**：
+- 新增 test/wp3.test.ts 14 项（布局解析、空 vault 静默、自定义目录路由、守卫派生、skill 扫描、记账参数化）；memory-guard 的两个 Step 4 测试补 `AI/04` 夹具——loop 级布局语义变化，裸库不再有 Step 4 语境
+- 完成定义 = 空 vault 六步冒烟清单（docs/09-空vault冒烟清单.md）全过，日志无「找不到 AI/03」类报错
+- 老用户零配置不变：库里有 `AI/` 即自动探测命中，路径与今天完全一致
+
+**替代方案**：各模块各自读设置（路径散落 N 处，否决）；未启用时也创建 `AI/` 目录「开箱即用」（违背上架要求，否决）；单独的「启用记忆功能」开关（目录探测已隐含开关，多一个设置项是噪音，否决）。

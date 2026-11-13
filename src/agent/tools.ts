@@ -6,7 +6,8 @@ import { isSensitivePath } from "../util/sensitive";
 import { explainAmbiguous, explainMismatch, findMatches, tierHint } from "../util/fuzzy";
 import { checkProtected } from "./guard";
 import { findSkill, readSkillBody, scanSkills, type SkillMeta } from "./skills";
-import { parseChecklist, POST_CHECKLIST_PATH, PRE_CHECKLIST_PATH, recordMemory } from "./memory";
+import { parseChecklist, recordMemory, type ChecklistPaths, type MemoryPaths } from "./memory";
+import { DEFAULT_AI_DIR, defaultLayout, type WorkspaceLayout } from "./workspace";
 import type { ApprovalStore } from "./approvals";
 import { BATCH_MAX_FILES, BATCH_PER_FILE_CHARS, BATCH_TOTAL_CHARS, MAX_OUTPUT_CHARS } from "./budgets";
 
@@ -71,6 +72,13 @@ export interface ToolContext {
    * loop 在 executeTool 之后读走并挂到 appliedOps 上；超 UNDO_TEXT_CAP 的操作不设置它。
    */
   pendingUndo?: UndoInfo;
+  /**
+   * WP3：AI 工作区布局。loop 每次 run 解析后传入；不传（工具层直接调用）
+   * 兜底 defaultLayout()——旧行为，路径都是 AI/ 下的常量。
+   */
+  layout?: WorkspaceLayout;
+  /** WP3：用户配置的额外保护路径（confirm 级），来自设置项 */
+  protectedPaths?: string[];
 }
 
 interface Entry {
@@ -410,7 +418,13 @@ async function enforceGuard(
   before: string,
   after: string,
 ): Promise<void> {
-  const hit = checkProtected(path);
+  // 工作区未启用（aiDir=""）时守卫仍按默认 AI 目录保留 00-06 禁写：
+  // 库里真有 AI/00-总指令.md 的话，不能因为功能关了就裸奔
+  const hit = checkProtected(path, {
+    aiDir: ctx.layout?.aiDir || DEFAULT_AI_DIR,
+    ...(ctx.layout ? { skillDirs: ctx.layout.skillDirs } : {}),
+    ...(ctx.protectedPaths ? { extraConsent: ctx.protectedPaths } : {}),
+  });
   if (!hit) return;
   if (hit.level === "deny") throw new PathError(hit.reason);
   const accepted = await ctx.confirm({
@@ -942,14 +956,23 @@ reg({
  */
 async function recordMemoryTool(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
   if (ctx.readOnly) return err("当前处于只读/隐私模式，禁止写记忆区。");
+  const layout = ctx.layout ?? defaultLayout();
+  if (!layout.aiEnabled) {
+    // 工作区未启用：明确说明并跳过，绝不凭空创建 AI/ 目录（Doc2-WP3）
+    return ok({
+      written: false,
+      note: "AI 工作区未启用（库里没有 AI 目录，设置里也未指定），已跳过记忆写入。任务本身不受影响。",
+    });
+  }
   const kind = args.kind === "history" ? "history" : "working";
   const title = str(args, "title").trim();
   const content = str(args, "content").trim();
   if (!title) throw new PathError("title 不能为空");
   if (!content) throw new PathError("content 不能为空");
 
+  const paths: MemoryPaths = { working: layout.workingPath, history: layout.historyPath };
   try {
-    const path = await recordMemory(ctx.app, { kind, title, content });
+    const path = await recordMemory(ctx.app, { kind, title, content }, paths);
     ctx.changedFiles.add(path);
     ctx.markMemory?.();
     return ok({ written: true, path, kind, hint: kind === "working" ? "已记入当前活跃任务" : "已追加到对话历史记录区" });
@@ -981,7 +1004,10 @@ reg({
 /** 取检查清单全文（Step 1/3 需要逐条核对时用） */
 async function readChecklist(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
   const kind = args.kind === "post" ? "post" : "pre";
-  const path = kind === "post" ? POST_CHECKLIST_PATH : PRE_CHECKLIST_PATH;
+  const layout = ctx.layout ?? defaultLayout();
+  if (!layout.aiEnabled) return err("AI 工作区未启用，检查清单不可用（可在设置里指定 AI 工作区目录）。");
+  const paths: ChecklistPaths = { pre: layout.preChecklistPath, post: layout.postChecklistPath };
+  const path = kind === "post" ? paths.post : paths.pre;
   const file = ctx.app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return err(`找不到 ${path}`);
   const raw = await ctx.app.vault.cachedRead(file);
@@ -1272,7 +1298,7 @@ async function useSkill(ctx: ToolContext, args: Record<string, unknown>): Promis
   if (ctx.skills) {
     skills = ctx.skills;
   } else {
-    const scanned = await scanSkills(ctx.app);
+    const scanned = await scanSkills(ctx.app, ctx.layout?.skillDirs);
     skills = scanned.skills;
     scanDegraded = scanned.degraded;
   }
@@ -1294,7 +1320,36 @@ async function useSkill(ctx: ToolContext, args: Record<string, unknown>): Promis
 // ---------------------------------------------------------------------------
 
 export function getToolSpecs(ctx: ToolContext): ToolSpec[] {
-  const all = [...REGISTRY.values()].map((e) => e.spec);
+  let all = [...REGISTRY.values()].map((e) => e.spec);
+  // WP3：工作区目录可配置，spec 描述里写死的 AI/0x 路径跟着布局走
+  if (ctx.layout && !ctx.layout.aiEnabled) {
+    all = all.map((s) =>
+      s.name === "record_memory"
+        ? {
+            ...s,
+            description:
+              "回写工作记忆（准则 Step 4）。当前 AI 工作区未启用，调用只会得到 written:false 的说明，不会写任何文件。",
+          }
+        : s,
+    );
+  } else if (ctx.layout && ctx.layout.aiDir !== DEFAULT_AI_DIR) {
+    const l = ctx.layout;
+    all = all.map((s) => {
+      if (s.name === "record_memory") {
+        return {
+          ...s,
+          description: `回写工作记忆（准则 Step 4）。kind=working 记入 ${l.workingPath} 的「当前活跃任务」，kind=history 追加到 ${l.historyPath}。任务做完且修改了文件时应该调用一次。`,
+        };
+      }
+      if (s.name === "read_checklist") {
+        return {
+          ...s,
+          description: `取准则检查清单全文：kind=pre 是任务前清单（${l.preChecklistPath}），kind=post 是质检清单（${l.postChecklistPath}）。结束任务前逐项核对时用。`,
+        };
+      }
+      return s;
+    });
+  }
   if (!ctx.readOnly) return all;
   // 只读模式：只暴露不写文件的工具
   const writeTools = new Set([

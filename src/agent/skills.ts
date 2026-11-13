@@ -11,6 +11,8 @@
 
 import type { App, TFile } from "obsidian";
 
+import { DEFAULT_AI_DIR, ROOT_SKILL_DIR } from "./workspace";
+
 export interface SkillMeta {
   name: string;
   description: string;
@@ -23,19 +25,19 @@ export interface SkillMeta {
   warnings?: string[];
 }
 
-/** 扫描这些目录（用户库里的实际位置是根目录 skills/） */
-export const SKILL_DIRS = ["skills/", "AI/skills/"];
+/** 旧默认的扫描目录（直接调用兜底）；loop 驱动时由 layout.skillDirs 传参 */
+export const SKILL_DIRS = [ROOT_SKILL_DIR, `${DEFAULT_AI_DIR}/skills/`];
 const MAX_SKILLS = 40;
 const HEAD_BYTES = 2000;
 const MAX_BODY_CHARS = 12000;
 
-function inSkillDir(path: string): boolean {
-  return SKILL_DIRS.some((d) => path.startsWith(d));
+function inSkillDir(path: string, dirs: string[]): boolean {
+  return dirs.some((d) => path.startsWith(d));
 }
 
 /** 规范布局的 SKILL.md 可以放在 skills/ 下任意层目录里 */
-function isSkillDoc(path: string): boolean {
-  return inSkillDir(path) && path.toLowerCase().endsWith(".md");
+function isSkillDoc(path: string, dirs: string[]): boolean {
+  return inSkillDir(path, dirs) && path.toLowerCase().endsWith(".md");
 }
 
 /** frontmatter 的原始文本（不含两行 ---），没有就返回 undefined */
@@ -199,12 +201,12 @@ export interface SkillScan {
 }
 
 /** 扫描可用的 skill；读不出来的跳过，不让一个坏文件拖垮整轮 */
-export async function scanSkills(app: App): Promise<SkillScan> {
+export async function scanSkills(app: App, dirs: string[] = SKILL_DIRS): Promise<SkillScan> {
   let files;
   try {
     files = app.vault
       .getMarkdownFiles()
-      .filter((f) => isSkillDoc(f.path))
+      .filter((f) => isSkillDoc(f.path, dirs))
       .slice(0, MAX_SKILLS);
   } catch (e) {
     // 整体扫描失败：绝不能返回空数组装作「库里没有 skill」

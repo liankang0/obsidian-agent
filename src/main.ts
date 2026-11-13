@@ -1,4 +1,4 @@
-import { Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from "obsidian";
+import { Notice, Plugin, PluginSettingTab, Setting, TFolder, WorkspaceLeaf } from "obsidian";
 import { finalAnswer, wantsResume } from "./agent/answer";
 import { ChatHistory } from "./agent/history";
 import { AgentLoop } from "./agent/loop";
@@ -14,6 +14,7 @@ import { runSelfTest, SELFTEST_FLAG, SELFTEST_REPORT } from "./agent/selftest";
 
 import { configureSpillRoot, spillDir, SPILL_KEEP_DAYS } from "./agent/spill";
 import { undoRun, type UndoReport } from "./agent/undo";
+import { resolveLayout, type WorkspaceSettings } from "./agent/workspace";
 
 const SECRET_ID = "local-vault-agent-api-key";
 
@@ -30,6 +31,12 @@ interface AgentSettings {
   requestTimeoutMs: number;
   /** 隐私模式：禁用全部写工具 */
   readOnly: boolean;
+  /** WP3：AI 工作区目录；空 = 自动探测（库里有 AI 目录才启用） */
+  aiDir: string;
+  /** WP3：额外 skill 目录，逗号分隔 */
+  skillDirs: string;
+  /** WP3：额外保护路径（confirm 级），逗号分隔；目录以 / 结尾 */
+  protectedPaths: string;
 }
 
 const DEFAULT_SETTINGS: AgentSettings = {
@@ -42,6 +49,9 @@ const DEFAULT_SETTINGS: AgentSettings = {
   confirmAfterFiles: 5,
   requestTimeoutMs: 90_000,
   readOnly: false,
+  aiDir: "",
+  skillDirs: "",
+  protectedPaths: "",
 };
 
 export default class ObsidianAgentPlugin extends Plugin {
@@ -178,6 +188,8 @@ export default class ObsidianAgentPlugin extends Plugin {
       // WP4：隐私模式热读取——设置页切换后，同一次会话的下一次工具调用就生效，
       // 不再要求重载插件
       getReadOnly: () => this.settings.readOnly,
+      // WP3：工作区设置同样热读取——每次任务开始时重新解析目录与保护路径
+      getLayoutOpts: () => this.layoutSettings(),
       approvals: this.approvals,
     });
 
@@ -283,7 +295,11 @@ export default class ObsidianAgentPlugin extends Plugin {
    */
   async undoLastRun(state: RunState): Promise<UndoReport> {
     if (this.loop?.isRunning) throw new Error("有任务正在运行，请先中止再撤销");
-    const report = await undoRun(this.app, state, this.logger);
+    // 撤销记账跟工作区走：未启用时传空串，绝不凭空创建 AI/03（Doc2-WP3）
+    const layout = resolveLayout(this.app, this.layoutSettings());
+    const report = await undoRun(this.app, state, this.logger, {
+      changelogPath: layout.aiEnabled ? layout.changelogPath : "",
+    });
     await this.loop.saveState(state).catch(() => undefined);
     return report;
   }
@@ -358,6 +374,36 @@ export default class ObsidianAgentPlugin extends Plugin {
       confirmAfterFiles: this.settings.confirmAfterFiles,
       requestTimeoutMs: this.settings.requestTimeoutMs,
     };
+  }
+
+  /** WP3：工作区设置的原始形态（loop 与撤销记账共用） */
+  layoutSettings(): WorkspaceSettings {
+    return {
+      aiDir: this.settings.aiDir ?? "",
+      skillDirs: this.settings.skillDirs ?? "",
+      protectedPaths: this.settings.protectedPaths ?? "",
+    };
+  }
+
+  /** WP3：设置页里实时展示的探测状态（同步读 vault，无副作用） */
+  workspaceStatusText(): string {
+    const raw = (this.settings.aiDir ?? "").trim();
+    const wanted = raw.replace(/\\/g, "/").replace(/\/+$/, "");
+    const dir = wanted || "AI";
+    let exists = false;
+    try {
+      exists = this.app.vault.getAbstractFileByPath(dir) instanceof TFolder;
+    } catch {
+      exists = false;
+    }
+    if (wanted) {
+      return exists
+        ? `✓ 使用 ${wanted}/（设置指定，已启用）——03/04/05/01/02 与 skill 目录都挂在这里`
+        : `⚠ 设置的 ${wanted}/ 在库里不存在，AI 工作区未启用（插件不会替你创建目录）`;
+    }
+    return exists
+      ? `✓ 检测到 ${dir}/ 目录，AI 工作区已启用（自动探测）`
+      : `未检测到 ${dir}/ 目录，AI 工作区未启用：不注入记忆块、不写修改记录、不提醒 Step 4`;
   }
 
   private async loadApiKey(): Promise<string> {
@@ -561,6 +607,62 @@ class AgentSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           new Notice("隐私模式已" + (v ? "开启" : "关闭") + "，下一次工具调用起生效");
         })
+      );
+
+    // ---------------------------------------------------------------------------
+    // AI 工作区（WP3）：记忆区 / 修改记录 / 检查清单 / skill 目录
+    // ---------------------------------------------------------------------------
+
+    containerEl.createEl("h3", { text: "AI 工作区" });
+    // 探测状态要随输入刷新，所以先拿到底层元素
+    const statusEl = containerEl.createEl("p", { cls: "setting-item-description" });
+    const refreshStatus = (): void => {
+      statusEl.setText(this.plugin.workspaceStatusText());
+    };
+    refreshStatus();
+
+    new Setting(containerEl)
+      .setName("AI 工作区目录")
+      .setDesc(
+        "修改记录（03）、工作记忆（04/05）、检查清单（01/02）都放在这个目录下。" +
+          "留空自动探测：库里有 AI 目录就启用；指定目录也必须真实存在才启用，插件绝不凭空创建。",
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder("AI")
+          .setValue(this.plugin.settings.aiDir)
+          .onChange(async (v) => {
+            this.plugin.settings.aiDir = v.trim();
+            await this.plugin.saveSettings();
+            refreshStatus();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("额外 skill 目录")
+      .setDesc("逗号分隔（支持中文逗号），如「skills,模板/skills」。skill 目录对模型禁写")
+      .addText((t) =>
+        t
+          .setPlaceholder("skills")
+          .setValue(this.plugin.settings.skillDirs)
+          .onChange(async (v) => {
+            this.plugin.settings.skillDirs = v.trim();
+            await this.plugin.saveSettings();
+            refreshStatus();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("额外保护路径")
+      .setDesc("逗号分隔的文件名或目录（目录以 / 结尾，如「重要/」）。命中后改动前需要你确认")
+      .addText((t) =>
+        t
+          .setPlaceholder("如：索引.md,归档/")
+          .setValue(this.plugin.settings.protectedPaths)
+          .onChange(async (v) => {
+            this.plugin.settings.protectedPaths = v.trim();
+            await this.plugin.saveSettings();
+          })
       );
 
     containerEl.createEl("h3", { text: "关于" });
