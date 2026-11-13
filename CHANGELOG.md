@@ -21,6 +21,7 @@
 - **工程基线**：CI（类型检查 / 测试 / 构建 / 产物大小断言）、真机自检剧本与单测共用、决策记录补齐
 - **安全收口**：日志打码两层化（配置密钥字面替换 + 高熵串兜底，取代猜 `sk-` 前缀）；工具失败诊断只回给模型，日志只记无内容摘要；`read_file` / `read_files` 的正文按「数据非指令」包裹；隐私模式开关即时生效（同一次会话内，无需重载）；破坏性操作单轮配额——3 次逐个确认后改一次清单式确认（见 docs/08-ADR.md ADR-011）
 - **可移植性解耦**：AI 工作区目录、额外 skill 目录、额外保护路径进入设置（留空自动探测库里的 `AI/` 目录）；空 vault 不再凭空创建 `AI/` 目录、不注入空记忆块、不产生日志噪音，`record_memory` 返回明确的跳过说明；00-06 守卫与 skill 扫描随目录派生（见 docs/08-ADR.md ADR-012）
+- **构建与发布基线**：Node 版本单一来源（`.nvmrc`，CI 同源）；esbuild / obsidian 钉死版本，干净克隆 `npm ci && npm run build` 产物逐字节一致；推送与 manifest.version 逐字符一致的 tag（不带 v）即自动发布非 draft release，三资产为裸文件 main.js / manifest.json / styles.css（.github/workflows/release.yml）
 
 ### 结构
 

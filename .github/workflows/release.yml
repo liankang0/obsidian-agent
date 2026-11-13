@@ -1,0 +1,53 @@
+name: Release Obsidian plugin
+
+# 推送 tag 即发版（Doc2-WP5）：npm ci && npm run build → 三个裸文件资产直接发布。
+# 三条铁律（写入团队约定，此处强制执行）：
+#   1. tag 不带 v 前缀，且必须与 manifest.json 的 version 逐字符一致
+#      （版本唯一来源是 manifest，tag 由它派生，不手工另写）
+#   2. release 直接发布，不停留在 draft
+#   3. 资产是 main.js / manifest.json / styles.css 三个裸文件，不是源码压缩包
+on:
+  push:
+    tags: ["*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 与 CI 同一来源：.nvmrc（WP4 构建可复现）
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: 校验 tag 纪律
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          if [[ "$tag" == v* ]]; then
+            echo "::error::tag 不带 v 前缀（当前：$tag）。用 git tag ${tag#v} 重打。"
+            exit 1
+          fi
+          version=$(node -p "require('./manifest.json').version")
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag（$tag）必须与 manifest.json 的 version（$version）逐字符一致"
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: 发布 release（三资产裸文件，非 draft）
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          # 重跑保护：release 已存在时只刷新资产，不重复创建
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" main.js manifest.json styles.css --clobber
+          else
+            gh release create "$tag" --title="$tag" main.js manifest.json styles.css
+          fi
