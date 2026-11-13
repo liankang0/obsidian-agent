@@ -4,6 +4,9 @@
   "description": "在 Obsidian 内运行的本地 AI Agent",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit && node esbuild.config.mjs production",
@@ -14,8 +17,8 @@
   "devDependencies": {
     "@types/node": "^20.11.0",
     "builtin-modules": "^3.3.0",
-    "esbuild": "^0.21.5",
-    "obsidian": "latest",
+    "esbuild": "0.21.5",
+    "obsidian": "1.14.4",
     "tslib": "^2.6.2",
     "typescript": "^5.4.5"
   }

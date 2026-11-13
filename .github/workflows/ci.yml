@@ -15,7 +15,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 版本单一来源：.nvmrc（WP4 构建可复现）
+          node-version-file: .nvmrc
           cache: npm
 
       - name: 安装依赖
@@ -34,7 +35,7 @@ jobs:
         run: |
           SIZE=$(wc -c < main.js)
           echo "main.js: ${SIZE} bytes"
-          # 主包当前约 168KB（minified，obsidian 是 external 不进包）。
+          # 主包当前约 190KB（minified，obsidian 是 external 不进包）。
           # 超过 512KB 说明把不该带的东西打进去了（比如误引入运行时依赖），先查再合。
           LIMIT=512000
           if [ "$SIZE" -gt "$LIMIT" ]; then

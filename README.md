@@ -52,10 +52,12 @@ Turning on **read-only (privacy) mode** in settings disables all write tools but
 
 ## Development
 
+Requires Node.js 22 (see `.nvmrc`; `nvm use` picks it up). Dependencies are locked — use `npm ci` so every clone builds from the same versions:
+
 ```bash
-npm install
+npm ci
 npm run build      # typecheck + bundle to main.js
-npm test           # 206 unit & integration tests
+npm test           # unit & integration tests
 ```
 
 A 44-item on-device self-test (no model calls, no token cost) can be triggered by placing a `selftest.flag` file in the plugin directory and reloading the plugin; the report lands in `selftest-report.json`.
