@@ -1,5 +1,7 @@
 # Local Vault Agent
 
+English | [简体中文](README.zh-CN.md)
+
 A local AI agent (harness) that runs inside Obsidian. Designed for one scenario: **using Obsidian on your phone and letting the model read and write the whole vault to get work done** — instead of copy-pasting text into a chat box.
 
 > Status: early release (v0.1.0). Verified on Android (real device, 44-item self-test) and desktop. All writes go through a diff dialog that you confirm.
