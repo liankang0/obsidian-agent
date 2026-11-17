@@ -15,7 +15,7 @@
 - `workspace` / `editor` API 支持原地编辑与 diff 预览
 - 一套代码覆盖 Android、iOS 与桌面端
 
-代价是插件内没有 Node.js——不能起 shell、不能用 `git`、不能用 `ripgrep`。见[架构设计](docs/02-架构设计.md)（中文）。
+代价是插件内没有 Node.js——不能起 shell、不能用 `git`、不能用 `ripgrep`。见[架构设计](docs/02-架构设计.md)（另附[英文版](docs/02-architecture.md)）。
 
 ## 核心能力
 
@@ -64,7 +64,7 @@ npm test           # 单元与集成测试
 
 44 项真机自检（不调模型、不花 token）：在插件目录放一个 `selftest.flag` 文件并重载插件即可触发，报告落在 `selftest-report.json`。
 
-设计文档（中文）在 [`docs/`](docs/01-需求与场景.md)：需求与场景、架构、工具集、移动端约束、竞品取舍、路线图、风险与 ADR。
+设计文档在 [`docs/`](docs/01-需求与场景.md)——架构一篇有[英文版](docs/02-architecture.md)，其余（需求与场景、工具集、移动端约束、竞品取舍、路线图、风险与 ADR）均为中文。
 
 ## 许可证
 

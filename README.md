@@ -15,7 +15,7 @@ A standalone Android app would have to fight for vault access (scoped storage, S
 - `workspace` / `editor` APIs enable in-place edits and diff previews
 - One codebase covers Android, iOS and desktop
 
-The trade-off: no Node.js inside the plugin — no shell, no `git`, no `ripgrep`. See [design docs](docs/02-架构设计.md) (Chinese).
+The trade-off: no Node.js inside the plugin — no shell, no `git`, no `ripgrep`. See the [architecture doc](docs/02-architecture.md); the remaining design docs are in Chinese.
 
 ## What it can do
 
@@ -64,7 +64,7 @@ npm test           # unit & integration tests
 
 A 44-item on-device self-test (no model calls, no token cost) can be triggered by placing a `selftest.flag` file in the plugin directory and reloading the plugin; the report lands in `selftest-report.json`.
 
-Design documents (Chinese) live in [`docs/`](docs/01-需求与场景.md): requirements, architecture, tool set, mobile constraints, roadmap, risks, and ADRs.
+Design documents live in [`docs/`](docs/01-需求与场景.md) — the architecture doc is available in [English](docs/02-architecture.md); the rest (requirements, tool set, mobile constraints, roadmap, risks, ADRs) are in Chinese.
 
 ## License
 
