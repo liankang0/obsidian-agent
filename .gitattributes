@@ -1,0 +1,18 @@
+# 统一行尾策略：仓库内与检出后一律 LF。
+# 目的：消除 Windows core.autocrlf 的 LF/CRLF 来回转换（提交时的
+# "LF will be replaced by CRLF" 警告），并保证 CI（Linux）与本机
+# 检出内容逐字节一致——WP4「构建可复现」的行尾部分。
+
+* text=auto eol=lf
+
+# 跨平台脚本：无论在哪个平台检出都必须是 LF，
+# 否则 WSL / Git Bash 执行 deploy.sh 会因 \r 报错
+*.sh text eol=lf
+
+# 二进制资产：显式声明，防止 auto 误判做行尾转换
+# （当前仓库暂未跟踪图片，留给将来 README 截图用）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
