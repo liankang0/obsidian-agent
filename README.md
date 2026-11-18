@@ -30,6 +30,10 @@ The trade-off: no Node.js inside the plugin — no shell, no `git`, no `ripgrep`
 | Memory | Bounded memory files (working memory / conversation log), injected into the system prompt |
 | Privacy | A read-only mode disables every write tool at once |
 
+The Agent panel running on a phone (Android, real device):
+
+![Local Harness Agent panel on Android](docs/images/agent-panel-mobile.png)
+
 Tools include: `read_file` / `read_files` (batch) / `list_files` / `search` / `search_by_tag` / `list_by_frontmatter` / `get_links` / `get_backlinks` / `patch_file` / `create_note` / `write_file` / `move_note` / `trash_note` / `trash_folder` / `open_note` / `ask_user` (pausable with tappable options) / `record_memory` / `use_skill` / `read_checklist`.
 
 Safety rails: sensitive files (`.env`, keys, credentials) are refused for both read and write; `.obsidian/` is off-limits; deletions go to the trash, never hard-deleted; after a configurable number of changed files every write requires individual confirmation; consecutive tool failures trip a circuit breaker.

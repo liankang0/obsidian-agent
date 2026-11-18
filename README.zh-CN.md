@@ -30,6 +30,10 @@
 | 记忆 | 有界记忆文件（工作记忆 / 对话日志），注入系统提示 |
 | 隐私 | 只读模式一键禁用所有写工具 |
 
+Agent 面板在手机上的实际运行画面（Android 真机）：
+
+![Local Harness Agent 面板（Android 真机）](docs/images/agent-panel-mobile.png)
+
 工具清单：`read_file` / `read_files`（批量）/ `list_files` / `search` / `search_by_tag` / `list_by_frontmatter` / `get_links` / `get_backlinks` / `patch_file` / `create_note` / `write_file` / `move_note` / `trash_note` / `trash_folder` / `open_note` / `ask_user`（可暂停，带可点选项）/ `record_memory` / `use_skill` / `read_checklist`。
 
 安全护栏：敏感文件（`.env`、密钥、凭据）读写一律拒绝；`.obsidian/` 禁写；删除只进回收站，绝不硬删；改动文件数超过可配置阈值后，每次写入都需单独确认；连续工具失败触发熔断。
