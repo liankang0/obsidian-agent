@@ -16,7 +16,7 @@
  * 生产环境由 main.ts 在 onload 时用 manifest.dir 校正（插件目录名不再写死在这里，
  * 改插件 id 时这里不用动——上架计划 WP1 的要求）。
  */
-const DEFAULT_SPILL_DIR = ".obsidian/plugins/local-vault-agent/spill";
+const DEFAULT_SPILL_DIR = ".obsidian/plugins/local-harness/spill";
 let spillRoot = DEFAULT_SPILL_DIR;
 
 /** 插件加载时调用：把外溢目录对准真实插件目录（如 .obsidian/plugins/<id>/spill） */

@@ -1,7 +1,7 @@
 {
-  "id": "local-vault-agent",
-  "name": "Local Vault Agent",
-  "version": "0.1.0",
+  "id": "local-harness",
+  "name": "Local Harness",
+  "version": "0.2.0",
   "minAppVersion": "1.13.0",
   "description": "Run a local AI agent over your vault: it searches and edits notes with tools, shows a diff for every write, and can resume interrupted tasks on mobile.",
   "author": "mi",

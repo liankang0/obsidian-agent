@@ -58,7 +58,7 @@ export const NOTE = [
   "## 小节",
 ].join("\n");
 
-/** 插件目录（.obsidian/plugins/local-vault-agent），剧本里存取档/会话都用它 */
+/** 插件目录（.obsidian/plugins/local-harness），剧本里存取档/会话都用它 */
 export const PLUGIN_DIR = SPILL_DIR.split("/").slice(0, 3).join("/");
 
 /** 剧本用的 AgentConfig：脚本化 provider，绝不发真实请求 */

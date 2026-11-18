@@ -1,6 +1,6 @@
 {
-  "name": "local-vault-agent",
-  "version": "0.1.0",
+  "name": "local-harness",
+  "version": "0.2.0",
   "description": "在 Obsidian 内运行的本地 AI Agent",
   "private": true,
   "type": "module",

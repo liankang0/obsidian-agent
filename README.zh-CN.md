@@ -1,4 +1,4 @@
-# Local Vault Agent
+# Local Harness
 
 [English](README.md) | 简体中文
 
@@ -41,15 +41,15 @@
 - **去哪里**：只发往你在插件设置里配置的 OpenAI 兼容端点，默认 `https://api.deepseek.com`。插件不带任何内置服务商，你不填 API Key 之前，它不会向任何地方发送任何东西。
 - **发什么**：任务执行中，读到的笔记（或摘录）、文件名、工具结果会作为模型提示的一部分发往该端点——模型就是这样干活的。对话历史也会发送，agent 需要回看之前的轮次。
 - **不发什么**：没有遥测、没有崩溃上报、没有分析统计，也不会请求你配置的端点之外的任何主机。API Key 存在 Obsidian 的 SecretStorage 里（含文档说明的本地设置降级方案），绝不上传。
-- **本地产物**：run checkpoint、日志、超长工具结果都写在你 Vault 内的 `.obsidian/plugins/local-vault-agent/` 下，除非你自己的同步服务去复制它们，否则不会离开你的设备。
+- **本地产物**：run checkpoint、日志、超长工具结果都写在你 Vault 内的 `.obsidian/plugins/local-harness/` 下，除非你自己的同步服务去复制它们，否则不会离开你的设备。
 
 在设置里打开**只读（隐私）模式**会禁用所有写工具，但不改变上述网络行为——推理始终需要端点。
 
 ## 快速开始
 
-1. 安装（从 release 资产把 `main.js`、`manifest.json`、`styles.css` 放进 `<vault>/.obsidian/plugins/local-vault-agent/`；等待进入社区插件目录期间可用 BRAT）
+1. 安装（从 release 资产把 `main.js`、`manifest.json`、`styles.css` 放进 `<vault>/.obsidian/plugins/local-harness/`；等待进入社区插件目录期间可用 BRAT）
 2. 在 Obsidian 里启用插件（手机端 `isDesktopOnly` 为 `false`，列表里才可见）
-3. 设置 → Local Vault Agent：填 Base URL + API Key，点「测试连接」
+3. 设置 → Local Harness：填 Base URL + API Key，点「测试连接」
 4. 从侧边栏 ribbon 打开 Agent 面板，下达任务，例如「列出所有带 #book 标签的笔记」
 
 ## 开发

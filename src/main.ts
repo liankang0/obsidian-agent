@@ -16,7 +16,7 @@ import { configureSpillRoot, spillDir, SPILL_KEEP_DAYS } from "./agent/spill";
 import { undoRun, type UndoReport } from "./agent/undo";
 import { resolveLayout, type WorkspaceSettings } from "./agent/workspace";
 
-const SECRET_ID = "local-vault-agent-api-key";
+const SECRET_ID = "local-harness-api-key";
 
 interface AgentSettings {
   baseUrl: string;
@@ -150,7 +150,7 @@ export default class ObsidianAgentPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    // 插件目录：<vault>/.obsidian/plugins/local-vault-agent
+    // 插件目录：<vault>/.obsidian/plugins/local-harness
     this.pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
     // 外溢目录跟着真实插件目录走，不再写死 id（改名/换目录时不用改代码）
     configureSpillRoot(`${this.pluginDir}/spill`);
@@ -195,7 +195,7 @@ export default class ObsidianAgentPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE_AGENT_CHAT, (leaf) => new ChatView(leaf, this));
 
-    const ribbon = this.addRibbonIcon("bot", "Local Vault Agent", () => void this.activateView());
+    const ribbon = this.addRibbonIcon("bot", "Local Harness", () => void this.activateView());
     ribbon.addClass("oa-ribbon");
 
     // 上次关着面板、这次重启后手动点开很烦：只要上次开过（leaf 还在），就自动展开
@@ -258,7 +258,7 @@ export default class ObsidianAgentPlugin extends Plugin {
   /** 跑一轮；返回模型最后的回答文本（供面板存入对话历史） */
   async runAgent(text: string, onEvent: (e: LoopEvent) => void, history: HistoryTurn[] = []): Promise<string> {
     if (!this.apiKey) {
-      new Notice("请先在 设置 → Local Vault Agent 中填写 API Key");
+      new Notice("请先在 设置 → Local Harness 中填写 API Key");
       return "";
     }
 

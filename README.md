@@ -1,4 +1,4 @@
-# Local Vault Agent
+# Local Harness
 
 English | [简体中文](README.zh-CN.md)
 
@@ -41,15 +41,15 @@ This plugin makes network requests, and you should know exactly what crosses the
 - **Where**: only to the OpenAI-compatible endpoint **you** configure in the plugin settings. The default is `https://api.deepseek.com`. The plugin ships with no built-in provider and sends nothing anywhere until you enter an API key.
 - **What**: during a task, the notes it reads (or excerpts of them), file names, and tool results are sent to that endpoint as part of the model prompt — this is how the model does its work. Conversation history is also sent so the agent can refer back to earlier turns.
 - **What is *not* sent**: there is no telemetry, no crash reporting, no analytics, and no request to any host other than the endpoint you configured. Your API key is stored in Obsidian's SecretStorage (with a documented fallback to local settings), never uploaded anywhere.
-- **Local artifacts**: run checkpoints, logs, and oversized tool results are written under `.obsidian/plugins/local-vault-agent/` inside your vault and never leave it unless your own sync service copies them.
+- **Local artifacts**: run checkpoints, logs, and oversized tool results are written under `.obsidian/plugins/local-harness/` inside your vault and never leave it unless your own sync service copies them.
 
 Turning on **read-only (privacy) mode** in settings disables all write tools but does not change the network behavior described above — inference always requires the endpoint.
 
 ## Quick start
 
-1. Install (from release assets: `main.js`, `manifest.json`, `styles.css` into `<vault>/.obsidian/plugins/local-vault-agent/`, or via BRAT while it awaits the community catalog)
+1. Install (from release assets: `main.js`, `manifest.json`, `styles.css` into `<vault>/.obsidian/plugins/local-harness/`, or via BRAT while it awaits the community catalog)
 2. Enable the plugin in Obsidian (on mobile, `isDesktopOnly` is `false`)
-3. Settings → Local Vault Agent: fill in Base URL + API Key, press "Test connection"
+3. Settings → Local Harness: fill in Base URL + API Key, press "Test connection"
 4. Open the Agent panel from the ribbon and give it a task, e.g. "list all notes tagged #book"
 
 ## Development

@@ -281,7 +281,7 @@ function makeLoop(files: Record<string, string>, script: Completion[]) {
       maxSteps: 6,
       confirmAfterFiles: 99,
     }),
-    pluginDir: ".obsidian/plugins/local-vault-agent",
+    pluginDir: ".obsidian/plugins/local-harness",
     log: LOG,
     confirm: async () => true,
     approvals: new ApprovalStore(),

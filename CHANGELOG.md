@@ -4,6 +4,13 @@
 
 格式参考 Keep a Changelog；已发布版本倒序排列。
 
+## [0.2.0] — 2026-11-18
+
+### 变更
+
+- 插件 id 由 `local-vault-agent` 改为 `local-harness`，显示名改为 Local Harness：官方社区目录已收录一条同 id/同名的插件（TonyPeonio/obsidian-local-vault-agent），改名以避开 duplicate-id 冲突。仅在未上架阶段调整，仓库名与 git 历史不变。
+- manifest / package / versions 版本号对齐到 0.2.0；README 中英、架构文档、测试与内部标识（SecretStorage key、视图类型、日志前缀）随 id 同步更新。功能与 0.1.0 一致，332 项测试通过。
+
 ## [0.1.0] — 2026-11-12
 
 首个公开发布版本（此前的内部迭代不单独记账，里程碑沿革见 docs/06-路线图）。
@@ -25,7 +32,7 @@
 
 ### 结构
 
-- 插件 id：`local-vault-agent`（此前 `obsidian-agent`）；名称 Local Vault Agent
+- 插件 id：`local-harness`（此前 `obsidian-agent`）；名称 Local Harness
 - 许可：MIT；README 含 Network use 披露（请求只发往用户配置的模型端点）
 
 ## [0.0.x] — 内部迭代（2026-09 ~ 2026-11）

@@ -134,7 +134,7 @@ async function recordUndo(
   const lines = [
     "",
     `### ${stamp(Date.now())} · 撤销本轮（run ${state.runId}）`,
-    `- **操作人**: Local Vault Agent（用户在面板点「撤销本轮」）`,
+    `- **操作人**: Local Harness（用户在面板点「撤销本轮」）`,
     `- **操作内容**: 还原 ${report.reverted.length} 个文件，跳过 ${report.skipped.length} 个`,
     `- **影响文件**: ${paths.map((f) => `\`${f}\``).join("、")}`,
     "",
@@ -147,7 +147,7 @@ async function recordUndo(
       if (current.includes(`撤销本轮（run ${state.runId}）`)) return;
       await app.vault.process(existing, (data) => `${data.replace(/\s*$/, "")}\n${lines.join("\n")}`);
     } else {
-      await app.vault.create(changelogPath, `# AI 修改记录\n\n> 由 Local Vault Agent 自动追加。\n${lines.join("\n")}`);
+      await app.vault.create(changelogPath, `# AI 修改记录\n\n> 由 Local Harness 自动追加。\n${lines.join("\n")}`);
     }
   } catch (e) {
     log.warn(`撤销记录写入失败（不影响撤销本身）：${e instanceof Error ? e.message : String(e)}`);

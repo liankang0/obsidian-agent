@@ -116,7 +116,7 @@ export interface LoopDeps {
   app: App;
   provider: Provider;
   getConfig: () => AgentConfig;
-  /** 插件目录，如 .obsidian/plugins/local-vault-agent */
+  /** 插件目录，如 .obsidian/plugins/local-harness */
   pluginDir: string;
   log: { info(s: string): void; warn(s: string): void; error(s: string): void };
   confirm: ToolContext["confirm"];

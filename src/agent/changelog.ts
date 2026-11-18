@@ -16,7 +16,7 @@ import { defaultLayout } from "./workspace";
 
 /** 旧默认布局下的路径（直接调用兜底）；loop 驱动时由 layout 传参 */
 export const CHANGELOG_PATH = defaultLayout().changelogPath;
-const MARKER = "<!-- local-vault-agent:auto -->";
+const MARKER = "<!-- local-harness:auto -->";
 
 /**
  * 主文件超过这么多字符就把旧内容整段归档到年度文件。
@@ -73,7 +73,7 @@ export function buildRecord(state: RunState, at: number): string {
   const lines = [
     "",
     `### ${stamp(at)} · ${taskTitle(state)}`,
-    `- **操作人**: Local Vault Agent（插件自动记录）`,
+    `- **操作人**: Local Harness（插件自动记录）`,
     `- **操作时间**: ${stamp(at)}`,
     `- **操作内容**: ${state.step} 步完成，改动 ${files.length} 个文件（run ${state.runId}）`,
     `- **影响文件**: ${files.map((f) => `\`${f}\``).join("、")}`,
@@ -120,7 +120,7 @@ export async function appendRecord(
         if (archived) {
           await app.vault.process(
             existing,
-            () => `# AI 修改记录\n\n> 由 Local Vault Agent 自动追加。\n${record}`,
+            () => `# AI 修改记录\n\n> 由 Local Harness 自动追加。\n${record}`,
           );
           return true;
         }
@@ -129,7 +129,7 @@ export async function appendRecord(
       await app.vault.process(existing, (data) => `${data.replace(/\s*$/, "")}\n${record}`);
       return true;
     }
-    await app.vault.create(changelogPath, `# AI 修改记录\n\n> 由 Local Vault Agent 自动追加。\n${record}`);
+    await app.vault.create(changelogPath, `# AI 修改记录\n\n> 由 Local Harness 自动追加。\n${record}`);
     return true;
   } catch (e) {
     log?.warn(`写修改记录失败（不影响任务）：${e instanceof Error ? e.message : String(e)}`);

@@ -119,7 +119,7 @@ function makeLoop(
       maxSteps: 8,
       confirmAfterFiles: opts.confirmAfterFiles ?? 99,
     }),
-    pluginDir: ".obsidian/plugins/local-vault-agent",
+    pluginDir: ".obsidian/plugins/local-harness",
     log: LOG,
     confirm: async () => {
       confirmCalls++;
@@ -211,7 +211,7 @@ test("发送即落盘：用户消息先写进存档，再发模型请求", async
       baseUrl: "http://test", apiKey: "k", model: "m", temperature: 0,
       maxTokens: 1000, maxSteps: 6, confirmAfterFiles: 99,
     }),
-    pluginDir: ".obsidian/plugins/local-vault-agent",
+    pluginDir: ".obsidian/plugins/local-harness",
     log: LOG,
     confirm: async () => true,
     approvals: new ApprovalStore(),
@@ -333,7 +333,7 @@ test("修改记录超阈值：旧内容进年度文件，主文件回到骨架�
   const year = new Date().getFullYear();
   const archive = `AI/03-修改记录-${year}.md`;
   const oldBody =
-    "# AI 修改记录\n\n> 由 Local Vault Agent 自动追加。\n\n### 旧记录\nOLD-RECORD-MARKER\n" +
+    "# AI 修改记录\n\n> 由 Local Harness 自动追加。\n\n### 旧记录\nOLD-RECORD-MARKER\n" +
     "x".repeat(ARCHIVE_THRESHOLD_CHARS + 500) +
     "\n";
   const app = new MockApp({ "AI/03-修改记录.md": oldBody });

@@ -168,7 +168,7 @@ function makeLoop(provider: unknown, maxSteps = 4) {
     app: app as never,
     provider: provider as ProviderType,
     getConfig: () => withCfg({ maxSteps }),
-    pluginDir: ".obsidian/plugins/local-vault-agent",
+    pluginDir: ".obsidian/plugins/local-harness",
     log: silentLog,
     confirm: async () => true,
     approvals: new ApprovalStore(),

@@ -197,7 +197,7 @@ test("隐私模式：开关后同一次会话内写工具即被拒绝，关掉�
       confirmAfterFiles: 99,
       requestTimeoutMs: 5000,
     }),
-    pluginDir: ".obsidian/plugins/local-vault-agent",
+    pluginDir: ".obsidian/plugins/local-harness",
     log: LOG,
     confirm: async () => true,
     getReadOnly: () => readOnly,

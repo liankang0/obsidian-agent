@@ -48,7 +48,7 @@ async function driveRun(
       confirmAfterFiles: 99,
       requestTimeoutMs: 5000,
     }),
-    pluginDir: ".obsidian/plugins/local-vault-agent",
+    pluginDir: ".obsidian/plugins/local-harness",
     log: LOG,
     confirm: async () => true,
     approvals: new ApprovalStore(),

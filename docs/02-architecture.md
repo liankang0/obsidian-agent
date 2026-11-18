@@ -57,7 +57,7 @@ Stop conditions (any one triggers): no tool calls, `maxSteps` reached, user abor
 
 **Why it is a must**: Android kills background processes. If an 8-step run gets killed at step 5 and state lives only in memory, what the user sees is "notes half-edited, conversation gone".
 
-Location: `<vault>/.obsidian/plugins/local-vault-agent/state/<runId>.json`
+Location: `<vault>/.obsidian/plugins/local-harness/state/<runId>.json`
 
 ```jsonc
 {

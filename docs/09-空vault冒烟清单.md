@@ -2,7 +2,7 @@
 
 在**全新的空库**（没有任何 `AI/` 目录）里安装插件后，按下面六步走一遍。
 每一步都要同时满足「功能符合预期」和「日志干净」——
-`.obsidian/plugins/local-vault-agent/logs/` 里不允许出现
+`.obsidian/plugins/local-harness/logs/` 里不允许出现
 「找不到 AI/03」「写修改记录失败」这类报错（WP3 的核心验收就是没有噪音）。
 
 > 与单测的关系：test/wp3.test.ts 用 MockApp 钉住了同样的行为，

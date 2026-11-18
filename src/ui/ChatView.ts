@@ -5,7 +5,7 @@ import { changeSummary, groupChanges } from "../agent/changes";
 import type { HistoryTurn, LoopEvent, PendingQuestion, RunState } from "../agent/types";
 import type ObsidianAgentPlugin from "../main";
 
-export const VIEW_TYPE_AGENT_CHAT = "local-vault-agent-chat";
+export const VIEW_TYPE_AGENT_CHAT = "local-harness-chat";
 
 /**
  * 会话面板。
@@ -84,7 +84,7 @@ export class ChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Local Vault Agent";
+    return "Local Harness";
   }
 
   getIcon(): string {
